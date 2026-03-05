@@ -50,7 +50,13 @@ class MainActivity : ComponentActivity() {
                         composable("main") {
                             MainScreen(
                                 modifier = Modifier.fillMaxSize(),
-                                onAboutClick = { navController.navigate("about") }
+                                onAboutClick = {
+                                    getSharedPreferences("talkify_app_config", MODE_PRIVATE)
+                                        .edit()
+                                        .putBoolean("has_opened_about_page", true)
+                                        .apply()
+                                    navController.navigate("about")
+                                }
                             )
                         }
                         composable("about") {

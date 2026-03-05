@@ -43,9 +43,20 @@ class SharedPreferencesAppConfigRepository(
         }
     }
 
+    override fun hasOpenedAboutPage(): Boolean {
+        return sharedPreferences.getBoolean(KEY_HAS_OPENED_ABOUT_PAGE, false)
+    }
+
+    override fun setAboutPageOpened(opened: Boolean) {
+        sharedPreferences.edit {
+            putBoolean(KEY_HAS_OPENED_ABOUT_PAGE, opened)
+        }
+    }
+
     companion object {
         private const val PREFS_NAME = "talkify_app_config"
         private const val KEY_SELECTED_ENGINE = "selected_engine"
         private const val KEY_HAS_REQUESTED_NOTIFICATION = "has_requested_notification"
+        private const val KEY_HAS_OPENED_ABOUT_PAGE = "has_opened_about_page"
     }
 }

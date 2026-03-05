@@ -38,4 +38,14 @@ interface AppConfigRepository {
      * 设置是否已经请求过通知权限
      */
     fun setHasRequestedNotificationPermission(requested: Boolean)
+
+    /**
+     * 检查是否已经打开过关于页面
+     */
+    fun hasOpenedAboutPage(): Boolean
+
+    /**
+     * 设置关于页面已打开
+     */
+    fun setAboutPageOpened(opened: Boolean)
 }

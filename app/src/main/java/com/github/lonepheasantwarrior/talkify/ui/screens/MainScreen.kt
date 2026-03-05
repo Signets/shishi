@@ -2,6 +2,7 @@ package com.github.lonepheasantwarrior.talkify.ui.screens
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
@@ -27,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -251,6 +253,23 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            val context = LocalContext.current
+            val aboutPageOpenedBefore = remember {
+                context.getSharedPreferences("talkify_app_config", Context.MODE_PRIVATE)
+                    .getBoolean("has_opened_about_page", false)
+            }
+            var aboutHintDismissed by remember { mutableStateOf(false) }
+
+            AnimatedVisibility(
+                visible = !aboutPageOpenedBefore && !aboutHintDismissed && startupState == StartupState.Completed,
+                enter = slideInVertically(initialOffsetY = { -it }),
+                exit = slideOutVertically(targetOffsetY = { -it })
+            ) {
+                AboutPageHintBanner(
+                    onClick = { aboutHintDismissed = true }
+                )
+            }
+
             AnimatedVisibility(
                 visible = !isDefaultEngine && startupState == StartupState.Completed,
                 enter = slideInVertically(initialOffsetY = { -it }),
@@ -259,7 +278,8 @@ fun MainScreen(
                  DefaultEngineBanner(
                      onClick = { viewModel.openTtsSettings() }
                  )
-             }
+            }
+
             when (startupState) {
                 StartupState.CheckingNetwork -> {
                     // 显示加载中
@@ -497,6 +517,53 @@ fun DefaultEngineBanner(
                     text = stringResource(R.string.default_engine_banner_content),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun AboutPageHintBanner(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        onClick = onClick,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        ),
+        shape = MaterialTheme.shapes.large
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Info,
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = MaterialTheme.colorScheme.onTertiaryContainer
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = stringResource(R.string.about_page_hint_banner_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = stringResource(R.string.about_page_hint_banner_content),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
                 )
             }
         }

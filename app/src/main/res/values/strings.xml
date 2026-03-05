@@ -128,6 +128,10 @@
     <string name="default_engine_banner_title">设为默认引擎</string>
     <string name="default_engine_banner_content">点击此处将 Talkify 设为默认语音合成引擎</string>
 
+    <!-- 关于页面提示 -->
+    <string name="about_page_hint_banner_title">关于应用</string>
+    <string name="about_page_hint_banner_content">点击上方的 Talkify 标题可打开关于页面</string>
+
     <!-- 关于页面 -->
     <string name="about_title">关于</string>
     <string name="about_version_format">版本 %1$s</string>

@@ -92,13 +92,12 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
             return
         }
 
-        val textChunks = splitTextIntoChunks(text, MAX_TEXT_LENGTH)
+        val textChunks = splitTextIntoChunks(text)
         if (textChunks.isEmpty()) {
             logWarning("待朗读文本内容为空")
             listener.onSynthesisCompleted()
             return
         }
-
 
         logInfo("Starting streaming synthesis: textLength=${text.length}, chunks=${textChunks.size}, pitch=${params.pitch}, speechRate=${params.speechRate}")
         logDebug("Audio config: ${audioConfig.getFormatDescription()}")
@@ -215,6 +214,8 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     ): DisposableSubscriber<MultiModalConversationResult> {
         return object : DisposableSubscriber<MultiModalConversationResult>() {
             private var isFirstChunk = index == 0
+            // 新增：用于跟踪当前文本块的第一个音频数据包，以便剥离可能存在的 WAV 头
+            private var isFirstAudioPacket = true
 
             override fun onStart() {
                 super.onStart()
@@ -230,15 +231,25 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
                 }
 
                 try {
-                    val audioData = extractAudioData(result)
+                    var audioData = extractAudioData(result)
                     if (audioData != null && audioData.isNotEmpty()) {
-                        logDebug("Received audio chunk: ${audioData.size} bytes")
-                        listener.onAudioAvailable(
-                            audioData,
-                            audioConfig.sampleRate,
-                            audioConfig.audioFormat,
-                            audioConfig.channelCount
-                        )
+
+                        // 【核心修复】：如果是第一个数据包，检查并剥离 WAV 文件头
+                        if (isFirstAudioPacket) {
+                            audioData = stripWavHeader(audioData)
+                            isFirstAudioPacket = false
+                        }
+
+                        // 二次校验，防止剥离头文件后数据为空
+                        if (audioData.isNotEmpty()) {
+                            logDebug("Received audio chunk: ${audioData.size} bytes")
+                            listener.onAudioAvailable(
+                                audioData,
+                                audioConfig.sampleRate,
+                                audioConfig.audioFormat,
+                                audioConfig.channelCount
+                            )
+                        }
                     }
                 } catch (e: Exception) {
                     logError("Error processing audio chunk", e)
@@ -263,19 +274,36 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         }
     }
 
-    private fun splitTextIntoChunks(text: String, maxLength: Int): List<String> {
+    /**
+     * 【核心修复】：移除音频流中的 WAV 文件头（如果存在）
+     * 检查数据是否以 RIFF 和 WAVE 开头，如果是，则安全截取 44 字节之后的数据
+     */
+    private fun stripWavHeader(data: ByteArray): ByteArray {
+        // 标准 WAV 头包含 44 个字节
+        if (data.size >= 44 &&
+            data[0] == 'R'.code.toByte() && data[1] == 'I'.code.toByte() &&
+            data[2] == 'F'.code.toByte() && data[3] == 'F'.code.toByte() &&
+            data[8] == 'W'.code.toByte() && data[9] == 'A'.code.toByte() &&
+            data[10] == 'V'.code.toByte() && data[11] == 'E'.code.toByte()
+        ) {
+            logInfo("Detected WAV header in stream, stripping the first 44 bytes to prevent audio cracking.")
+            return data.copyOfRange(44, data.size)
+        }
+        return data
+    }
+
+    private fun splitTextIntoChunks(text: String): List<String> {
         if (text.isEmpty()) return emptyList()
-        if (text.length <= maxLength) return listOf(text)
+        if (text.length <= MAX_TEXT_LENGTH) return listOf(text)
 
         val chunks = mutableListOf<String>()
         var lastSplitPos = 0
 
         var i = 0
         while (i < text.length) {
-            text[i]
             val remainingLength = text.length - lastSplitPos
 
-            if (remainingLength <= maxLength) {
+            if (remainingLength <= MAX_TEXT_LENGTH) {
                 chunks.add(text.substring(lastSplitPos))
                 break
             }
@@ -285,7 +313,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
             if (isSentenceEnd || isMidPause) {
                 val chunkLength = i - lastSplitPos + 1
-                if (chunkLength <= maxLength) {
+                if (chunkLength <= MAX_TEXT_LENGTH) {
                     chunks.add(text.substring(lastSplitPos, i + 1))
                     lastSplitPos = i + 1
                     i++
@@ -293,13 +321,13 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
                 }
             }
 
-            val splitPos = findBestSplitPos(text, lastSplitPos, maxLength)
+            val splitPos = findBestSplitPos(text, lastSplitPos)
             if (splitPos > lastSplitPos) {
                 chunks.add(text.substring(lastSplitPos, splitPos))
                 lastSplitPos = splitPos
             } else {
-                chunks.add(text.substring(lastSplitPos, lastSplitPos + maxLength))
-                lastSplitPos += maxLength
+                chunks.add(text.substring(lastSplitPos, lastSplitPos + MAX_TEXT_LENGTH))
+                lastSplitPos += MAX_TEXT_LENGTH
             }
             i = lastSplitPos
         }
@@ -329,8 +357,8 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         return false
     }
 
-    private fun findBestSplitPos(text: String, startPos: Int, maxLength: Int): Int {
-        val searchEnd = minOf(startPos + maxLength, text.length)
+    private fun findBestSplitPos(text: String, startPos: Int): Int {
+        val searchEnd = minOf(startPos + MAX_TEXT_LENGTH, text.length)
 
         for (i in searchEnd - 1 downTo startPos + 1) {
             if (checkMidPause(text, i)) {
@@ -361,7 +389,10 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         val languageType = convertToQwenLanguageType(params.language)
 
         return MultiModalConversationParam.builder().apiKey(config.apiKey)
-            .model(MODEL_QWEN3_TTS_FLASH).text(text).voice(voice).languageType(languageType).build()
+            .model(MODEL_QWEN3_TTS_FLASH).text(text).voice(voice).languageType(languageType)
+            // 【保险参数】：主动向云端请求 PCM 裸流（部分版本 SDK/大模型已支持该参数）
+            .parameter("format", "pcm")
+            .build()
     }
 
     private fun convertToQwenLanguageType(language: String?): String {
@@ -394,7 +425,6 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
         }
     }
 
-
     @Suppress("UNUSED_PARAMETER")
     private fun isSynthesIsFinished(result: MultiModalConversationResult): Boolean {
         return false
@@ -402,7 +432,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
 
     private fun extractAudioData(result: MultiModalConversationResult): ByteArray? {
         return try {
-            val output = result.getOutput() ?: return null
+            val output = result.output ?: return null
             val audio = output.audio ?: return null
             val base64Data = audio.data
 
@@ -446,7 +476,7 @@ class Qwen3TtsEngine : AbstractTtsEngine() {
     }
 
     override fun getDefaultVoiceId(lang: String?, country: String?, variant: String?, currentVoiceId: String?): String {
-        if (currentVoiceId != null && currentVoiceId.isNotBlank()) {
+        if (!currentVoiceId.isNullOrBlank()) {
             return "$currentVoiceId$VOICE_NAME_SEPARATOR$lang"
         }
         return "${AudioParameters.Voice.CHERRY.value}$VOICE_NAME_SEPARATOR$lang"

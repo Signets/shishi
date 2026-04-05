@@ -12,6 +12,9 @@ import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.TencentTts.
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.XiaoMiMimo.displayName
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.XiaoMiMimo.provider
 import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.XiaoMiMimo.value
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.MiniMax.displayName
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.MiniMax.provider
+import com.github.lonepheasantwarrior.talkify.domain.model.EngineIds.MiniMax.value
 
 
 /**
@@ -88,6 +91,19 @@ sealed class EngineIds {
     }
 
     /**
+     * MiniMax - 语音合成引擎
+     *
+     * @property value 引擎唯一标识符：minimax-tts
+     * @property displayName 显示名称：MiniMax语音合成
+     * @property provider 服务提供商：MiniMax
+     */
+    data object MiniMax : EngineIds() {
+        override val value: String = "minimax-tts"
+        override val displayName: String = "MiniMax语音合成"
+        override val provider: String = "MiniMax"
+    }
+
+    /**
      * 引擎唯一标识符
      */
     abstract val value: String
@@ -107,7 +123,7 @@ sealed class EngineIds {
          * 获取所有定义的引擎 ID 列表
          */
         val entries: List<EngineIds> by lazy {
-            listOf(MicrosoftTts, SeedTts2, TencentTts, Qwen3Tts, XiaoMiMimo)
+            listOf(MicrosoftTts, SeedTts2, TencentTts, Qwen3Tts, XiaoMiMimo, MiniMax)
         }
     }
 }

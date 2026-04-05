@@ -64,6 +64,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.github.lonepheasantwarrior.talkify.R
 import com.github.lonepheasantwarrior.talkify.domain.model.MicrosoftTtsConfig
+import com.github.lonepheasantwarrior.talkify.domain.model.MiniMaxTtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.Qwen3TtsConfig
 import com.github.lonepheasantwarrior.talkify.domain.model.SeedTts2Config
 import com.github.lonepheasantwarrior.talkify.domain.model.TencentTtsConfig
@@ -371,6 +372,10 @@ fun MainScreen(
                                         val xmConfig = savedConfig as? XiaoMiMimoConfig ?: XiaoMiMimoConfig()
                                         xmConfig.copy(voiceId = selectedVoice?.voiceId ?: xmConfig.voiceId)
                                     }
+                                    is MiniMaxTtsConfig -> {
+                                        val mmConfig = savedConfig as? MiniMaxTtsConfig ?: MiniMaxTtsConfig()
+                                        mmConfig.copy(voiceId = selectedVoice?.voiceId ?: mmConfig.voiceId)
+                                    }
                                     else -> savedConfig
                                 }
 
@@ -382,6 +387,7 @@ fun MainScreen(
                                             config.secretKey.isNotBlank()
                                     is MicrosoftTtsConfig -> true
                                     is XiaoMiMimoConfig -> config.apiKey.isNotBlank()
+                                    is MiniMaxTtsConfig -> config.apiKey.isNotBlank()
                                     else -> false
                                 }
 

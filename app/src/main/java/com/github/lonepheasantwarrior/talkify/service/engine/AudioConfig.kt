@@ -73,6 +73,17 @@ data class AudioConfig(
         )
 
         /**
+         * MiniMax 语音合成默认配置
+         * 参考 MiniMax API 文档，音频输出格式为 PCM 16bit 32kHz
+         * MiniMax 返回的是 hex 编码的 PCM 数据
+         */
+        val MINI_MAX_TTS = AudioConfig(
+            sampleRate = 32000,
+            audioFormat = AudioFormat.ENCODING_PCM_16BIT,
+            channelCount = 1
+        )
+
+        /**
          * 创建标准配置
          *
          * @param sampleRate 采样率

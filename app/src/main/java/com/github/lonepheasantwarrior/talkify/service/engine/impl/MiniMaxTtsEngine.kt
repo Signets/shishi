@@ -174,6 +174,10 @@ class MiniMaxTtsEngine : AbstractTtsEngine() {
         logInfo("Starting synthesis: textLength=${text.length}, pitch=${params.pitch}, speechRate=${params.speechRate}")
         logDebug("Audio config: ${audioConfig.getFormatDescription()}")
 
+        // 取消任何进行中的合成，防止残留的 decodeJob 导致音频重复
+        decodeJob?.cancel()
+        decodeJob = null
+
         isCancelled = false
         hasCompleted = false
         isFirstChunk = true
@@ -400,16 +404,16 @@ class MiniMaxTtsEngine : AbstractTtsEngine() {
                             // status=2 表示该 chunk 合成结束
                             if (status == 2) {
                                 logDebug("Chunk $chunkIndex finished")
+                                // 打印 extra_info（最后的汇总信息）
+                                val extraInfo = json.optJSONObject("extra_info")
+                                if (extraInfo != null) {
+                                    logDebug(
+                                        "Extra info: audio_length=${extraInfo.optInt("audio_length")}, " +
+                                                "usage_characters=${extraInfo.optInt("usage_characters")}"
+                                    )
+                                }
+                                break
                             }
-                        }
-
-                        // 打印 extra_info（最后的汇总信息）
-                        val extraInfo = json.optJSONObject("extra_info")
-                        if (extraInfo != null) {
-                            logDebug(
-                                "Extra info: audio_length=${extraInfo.optInt("audio_length")}, " +
-                                        "usage_characters=${extraInfo.optInt("usage_characters")}"
-                            )
                         }
 
                     } catch (e: Exception) {
@@ -540,6 +544,9 @@ class MiniMaxTtsEngine : AbstractTtsEngine() {
             put("model", DEFAULT_MODEL)
             put("text", text)
             put("stream", true)
+            put("stream_options", JSONObject().apply {
+                put("exclude_aggregated_audio",true)
+            })
             put("voice_setting", JSONObject().apply {
                 put("voice_id", voiceId)
                 put("speed", speed)
@@ -842,8 +849,9 @@ class MiniMaxTtsEngine : AbstractTtsEngine() {
         isCancelled = true
         currentCall?.cancel()
         currentCall = null
-        decodeJob?.cancel()
-        decodeJob = null
+        // 重置状态，允许下次合成
+        hasCompleted = false
+        isFirstChunk = true
     }
 
     override fun release() {

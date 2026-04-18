@@ -15,20 +15,41 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: set up JDK 17
-      uses: actions/setup-java@v3
+      uses: actions/setup-java@v4
       with:
         java-version: '17'
         distribution: 'temurin'
         cache: gradle
 
+    # 缓存 Gradle Wrapper 分发包（即 gradle-x.y.z-bin.zip 本体）
+    # key 绑定 wrapper/gradle-wrapper.properties，版本变化才重新下载
+    - name: Cache Gradle Wrapper
+      uses: actions/cache@v4
+      with:
+        path: ~/.gradle/wrapper/dists
+        key: gradle-wrapper-${{ hashFiles('gradle/wrapper/gradle-wrapper.properties') }}
+        restore-keys: gradle-wrapper-
+
+    # 缓存 Gradle 构建依赖（jar、aar 等）
+    - name: Cache Gradle Dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/configuration-cache
+        key: gradle-deps-${{ hashFiles('**/*.gradle.kts', '**/libs.versions.toml') }}
+        restore-keys: gradle-deps-
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build with Gradle
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
       with:
         name: app-debug-apk
         path: app/build/outputs/apk/debug/app-debug.apk
+        # 保留 7 天，避免免费空间超限
+        retention-days: 7

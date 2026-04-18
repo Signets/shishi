@@ -103,6 +103,19 @@ object PlaylistManager {
         // 状态只是运行时数据，不需要持久化
     }
 
+    /** 将所有 PLAYING/PAUSED 状态的条目重置为 IDLE，确保同一时间只有一个活跃条目 */
+    fun resetActiveItems() {
+        _playlist.update { current ->
+            current.map { item ->
+                if (item.status == PlaylistItemStatus.PLAYING || item.status == PlaylistItemStatus.PAUSED) {
+                    item.copy(status = PlaylistItemStatus.IDLE)
+                } else {
+                    item
+                }
+            }
+        }
+    }
+
     fun getNextIdleItem(): PlaylistItem? =
         _playlist.value.firstOrNull { it.status == PlaylistItemStatus.IDLE }
 

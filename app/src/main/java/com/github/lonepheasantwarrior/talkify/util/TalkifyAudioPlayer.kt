@@ -42,6 +42,9 @@ class TalkifyAudioPlayer(
 
     private var isPlaying = AtomicBoolean(false)
 
+    /** 用户暂停标志：为 true 时 play() 只写缓冲区，不触发 AudioTrack.play() */
+    private var isPaused = AtomicBoolean(false)
+
     private var isPlaybackStarted = AtomicBoolean(false)
 
     private val playerScope = CoroutineScope(Dispatchers.IO + Job())
@@ -142,6 +145,16 @@ class TalkifyAudioPlayer(
             }
 
             return try {
+                // 暂停状态下只写入数据到缓冲区，不触发播放
+                if (isPaused.get()) {
+                    totalAudioBytes += audioData.size
+                    val writtenBytes = track?.write(audioData, 0, audioData.size) ?: -1
+                    if (writtenBytes > 0) {
+                        TtsLogger.v("Buffered $writtenBytes bytes while paused, total: $totalAudioBytes")
+                    }
+                    return true
+                }
+
                 val wasPlaying = isPlaying.getAndSet(true)
                 if (!wasPlaying) {
                     isPlaybackStarted.set(true)
@@ -199,11 +212,13 @@ class TalkifyAudioPlayer(
     fun pause() {
         if (isPlaying.get()) {
             try {
+                isPaused.set(true)
                 audioTrack?.pause()
                 isPlaying.set(false)
                 playbackProgressJob?.cancel()
                 TtsLogger.d("Playback paused")
             } catch (e: Exception) {
+                isPaused.set(false)
                 val errorMsg = "Failed to pause playback: ${e.message}"
                 TtsLogger.e(errorMsg, e)
                 notifyError(errorMsg)
@@ -212,6 +227,7 @@ class TalkifyAudioPlayer(
     }
 
     fun resume() {
+        isPaused.set(false)
         if (!isPlaying.get() && audioTrack != null && isPlaybackStarted.get()) {
             try {
                 isPlaying.set(true)
@@ -246,7 +262,9 @@ class TalkifyAudioPlayer(
 
     fun stop() {
         synchronized(trackLock) {
-            if (isPlaying.get()) {
+            isPaused.set(false)
+            // 暂停时 isPlaying 为 false，但 AudioTrack 仍需停止，因此同时检查 isPlaybackStarted
+            if (isPlaying.get() || isPlaybackStarted.get()) {
                 try {
                     isPlaying.set(false)
                     isPlaybackStarted.set(false)
@@ -267,6 +285,7 @@ class TalkifyAudioPlayer(
             isReleased = true
             playbackProgressJob?.cancel()
             playbackProgressJob = null
+            isPaused.set(false)
             isPlaying.set(false)
             isPlaybackStarted.set(false)
 

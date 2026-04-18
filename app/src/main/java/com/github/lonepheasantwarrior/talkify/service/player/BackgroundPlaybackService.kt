@@ -164,6 +164,9 @@ class BackgroundPlaybackService : Service() {
     }
 
     private fun playNextItem() {
+        // 确保同一时间只有一个条目处于活跃状态（PLAYING/PAUSED → IDLE）
+        PlaylistManager.resetActiveItems()
+
         val nextItem = PlaylistManager.getNextItemAfter(currentPlayingItem?.id ?: "")
             ?: PlaylistManager.getNextIdleItem()
 

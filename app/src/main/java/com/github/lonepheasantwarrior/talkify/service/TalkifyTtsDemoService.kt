@@ -21,6 +21,7 @@ class TalkifyTtsDemoService(
         const val STATE_PLAYING = 1
         const val STATE_STOPPED = 2
         const val STATE_ERROR = 3
+        const val STATE_PAUSED = 4
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -34,14 +35,6 @@ class TalkifyTtsDemoService(
     /** 当前播放倍速 */
     @Volatile
     private var currentSpeed: Float = 1.0f
-
-    /** 用户是否手动暂停了播放 */
-    @Volatile
-    private var isPausedByUser = false
-
-    /** 合成是否在暂停期间完成 */
-    @Volatile
-    private var synthesisCompletedWhilePaused = false
 
     @Volatile
     private var isStopped = AtomicBoolean(false)
@@ -65,8 +58,6 @@ class TalkifyTtsDemoService(
         speed: Float = 1.0f
     ) {
         currentSpeed = speed
-        isPausedByUser = false
-        synthesisCompletedWhilePaused = false
         if (currentState == STATE_PLAYING) {
             stop()
         }
@@ -146,12 +137,7 @@ class TalkifyTtsDemoService(
 
             override fun onSynthesisCompleted() {
                 TtsLogger.d("Synthesis completed")
-                if (isPausedByUser) {
-                    // 暂停期间合成完成，延迟到恢复后再处理
-                    synthesisCompletedWhilePaused = true
-                    return
-                }
-                stopPlayback(isNaturalCompletion = true)
+                stopPlayback()
             }
 
             override fun onError(error: String) {
@@ -167,48 +153,32 @@ class TalkifyTtsDemoService(
     fun pause() {
         if (currentState == STATE_PLAYING) {
             TtsLogger.d("Pausing playback")
-            isPausedByUser = true
             audioPlayer?.pause()
-            // 不改变 currentState，由外部（Service）管理状态
+            currentState = STATE_PAUSED
+            // 不通知 stateListener，暂停状态由 BackgroundPlaybackService 管理
         }
     }
 
     /** 恢复播放 */
     fun resume() {
-        TtsLogger.d("Resuming playback")
-        isPausedByUser = false
-        audioPlayer?.resume()
-        if (currentSpeed != 1.0f) {
-            audioPlayer?.setPlaybackSpeed(currentSpeed)
-        }
-        // 如果合成在暂停期间已完成，等待音频播放完毕后触发完成回调
-        if (synthesisCompletedWhilePaused) {
-            synthesisCompletedWhilePaused = false
-            serviceScope.launch(Dispatchers.IO) {
-                audioPlayer?.waitForPlaybackComplete(timeoutSeconds = 300) { isStopped.get() }
-                if (!isStopped.get() && !isPausedByUser) {
-                    stopPlayback(isNaturalCompletion = true)
-                }
+        if (currentState == STATE_PAUSED) {
+            TtsLogger.d("Resuming playback")
+            audioPlayer?.resume()
+            currentState = STATE_PLAYING
+            if (currentSpeed != 1.0f) {
+                audioPlayer?.setPlaybackSpeed(currentSpeed)
             }
         }
     }
 
     fun stop() {
         TtsLogger.d("Stopping playback")
-        isPausedByUser = false
-        synthesisCompletedWhilePaused = false
         isStopped.set(true)
         audioPlayer?.stop()
         stopPlayback()
     }
 
-    /**
-     * 停止播放并释放资源。
-     *
-     * @param isNaturalCompletion 是否为自然播放完毕（true → STATE_STOPPED，触发自动下一条）。
-     *   手动停止或切换条目时传 false（默认）→ STATE_IDLE，不触发自动下一条。
-     */
-    private fun stopPlayback(isNaturalCompletion: Boolean = false) {
+    private fun stopPlayback() {
         serviceScope.launch(Dispatchers.IO) {
             try {
                 audioPlayer?.stop()
@@ -225,10 +195,10 @@ class TalkifyTtsDemoService(
             }
 
             if (currentState != STATE_STOPPED) {
-                currentState = when {
-                    lastErrorMessage != null -> STATE_ERROR
-                    isNaturalCompletion     -> STATE_STOPPED
-                    else                    -> STATE_IDLE
+                currentState = if (lastErrorMessage != null) {
+                    STATE_ERROR
+                } else {
+                    STATE_IDLE
                 }
                 notifyStateChange()
             }

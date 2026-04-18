@@ -98,22 +98,19 @@ object PlaylistManager {
 
     fun updateItemStatus(id: String, status: PlaylistItemStatus) {
         _playlist.update { current ->
-            current.map { if (it.id == id) it.copy(status = status) else it }
-        }
-        // 状态只是运行时数据，不需要持久化
-    }
-
-    /** 将所有 PLAYING/PAUSED 状态的条目重置为 IDLE，确保同一时间只有一个活跃条目 */
-    fun resetActiveItems() {
-        _playlist.update { current ->
             current.map { item ->
-                if (item.status == PlaylistItemStatus.PLAYING || item.status == PlaylistItemStatus.PAUSED) {
-                    item.copy(status = PlaylistItemStatus.IDLE)
-                } else {
-                    item
+                when {
+                    item.id == id -> item.copy(status = status)
+                    // 当有新条目变为 PLAYING/PAUSED 时，将其他正在播放/暂停的条目重置为 IDLE
+                    // 保证全局最多只有一个条目处于活跃状态
+                    (status == PlaylistItemStatus.PLAYING || status == PlaylistItemStatus.PAUSED)
+                        && (item.status == PlaylistItemStatus.PLAYING || item.status == PlaylistItemStatus.PAUSED)
+                        -> item.copy(status = PlaylistItemStatus.IDLE)
+                    else -> item
                 }
             }
         }
+        // 状态只是运行时数据，不需要持久化
     }
 
     fun getNextIdleItem(): PlaylistItem? =

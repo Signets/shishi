@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.SettingsSuggest
 import androidx.compose.material3.Card
@@ -43,6 +44,11 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import com.github.lonepheasantwarrior.talkify.ui.playlist.PlaylistScreen
+import com.github.lonepheasantwarrior.talkify.service.player.BackgroundPlaybackService
+import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -209,17 +215,37 @@ fun MainScreen(
         selectedVoice = availableVoices.find { it.voiceId == savedConfig.voiceId } ?: voices.firstOrNull()
     }
 
+    var currentTab by remember { mutableStateOf(0) }
+
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { viewModel.openConfigSheet() },
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.List,
-                    contentDescription = stringResource(R.string.cd_settings_button)
+            if (currentTab == 0) {
+                FloatingActionButton(
+                    onClick = { viewModel.openConfigSheet() },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.List,
+                        contentDescription = stringResource(R.string.cd_settings_button)
+                    )
+                }
+            }
+        },
+        bottomBar = {
+            NavigationBar {
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Home, contentDescription = "引擎") },
+                    label = { Text("引擎配置") },
+                    selected = currentTab == 0,
+                    onClick = { currentTab = 0 }
+                )
+                NavigationBarItem(
+                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "播放列表") },
+                    label = { Text("播放列表") },
+                    selected = currentTab == 1,
+                    onClick = { currentTab = 1 }
                 )
             }
         },
@@ -263,7 +289,7 @@ fun MainScreen(
             var aboutHintDismissed by remember { mutableStateOf(false) }
 
             AnimatedVisibility(
-                visible = !aboutPageOpenedBefore && !aboutHintDismissed && startupState == StartupState.Completed,
+                visible = currentTab == 0 && !aboutPageOpenedBefore && !aboutHintDismissed && startupState == StartupState.Completed,
                 enter = slideInVertically(initialOffsetY = { -it }),
                 exit = slideOutVertically(targetOffsetY = { -it })
             ) {
@@ -316,98 +342,115 @@ fun MainScreen(
                     )
                 }
                 else -> {
-                    // 网络检查通过，显示主界面内容
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Spacer(modifier = Modifier.height(8.dp))
+                    if (currentTab == 0) {
+                        // 网络检查通过，显示主界面内容
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Spacer(modifier = Modifier.height(8.dp))
 
-                        EngineSelector(
-                            currentEngine = currentEngine,
-                            availableEngines = availableEngines,
-                            onEngineSelected = { engine ->
-                                currentEngine = engine
-                                appConfigRepository.saveSelectedEngineId(engine.id)
-                            },
-                            modifier = Modifier.fillMaxWidth()
+                            EngineSelector(
+                                currentEngine = currentEngine,
+                                availableEngines = availableEngines,
+                                onEngineSelected = { engine ->
+                                    currentEngine = engine
+                                    appConfigRepository.saveSelectedEngineId(engine.id)
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            VoicePreview(
+                                inputText = inputText,
+                                onInputTextChange = { inputText = it },
+                                availableVoices = availableVoices,
+                                selectedVoice = selectedVoice,
+                                onVoiceSelected = { voice -> selectedVoice = voice },
+                                isPlaying = isPlaying,
+                                onPlayClick = {
+                                    if (inputText.isBlank()) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("请输入要合成的文本")
+                                        }
+                                        return@VoicePreview
+                                    }
+
+                                    val config = when (savedConfig) {
+                                        is Qwen3TtsConfig -> {
+                                            val qwenConfig = savedConfig as? Qwen3TtsConfig ?: Qwen3TtsConfig()
+                                            qwenConfig.copy(voiceId = selectedVoice?.voiceId ?: qwenConfig.voiceId)
+                                        }
+                                        is SeedTts2Config -> {
+                                            val seedConfig = savedConfig as? SeedTts2Config ?: SeedTts2Config()
+                                            seedConfig.copy(voiceId = selectedVoice?.voiceId ?: seedConfig.voiceId)
+                                        }
+                                        is TencentTtsConfig -> {
+                                            val tencentConfig = savedConfig as? TencentTtsConfig ?: TencentTtsConfig()
+                                            tencentConfig.copy(voiceId = selectedVoice?.voiceId ?: tencentConfig.voiceId)
+                                        }
+                                        is MicrosoftTtsConfig -> {
+                                            val msConfig = savedConfig as? MicrosoftTtsConfig ?: MicrosoftTtsConfig()
+                                            msConfig.copy(voiceId = selectedVoice?.voiceId ?: msConfig.voiceId)
+                                        }
+                                        is XiaoMiMimoConfig -> {
+                                            val xmConfig = savedConfig as? XiaoMiMimoConfig ?: XiaoMiMimoConfig()
+                                            xmConfig.copy(voiceId = selectedVoice?.voiceId ?: xmConfig.voiceId)
+                                        }
+                                        is MiniMaxTtsConfig -> {
+                                            val mmConfig = savedConfig as? MiniMaxTtsConfig ?: MiniMaxTtsConfig()
+                                            mmConfig.copy(voiceId = selectedVoice?.voiceId ?: mmConfig.voiceId)
+                                        }
+                                        else -> savedConfig
+                                    }
+
+                                    val isConfigured = when (config) {
+                                        is Qwen3TtsConfig -> config.apiKey.isNotBlank()
+                                        is SeedTts2Config -> config.apiKey.isNotBlank()
+                                        is TencentTtsConfig -> config.appId.isNotBlank() && 
+                                                config.secretId.isNotBlank() && 
+                                                config.secretKey.isNotBlank()
+                                        is MicrosoftTtsConfig -> true
+                                        is XiaoMiMimoConfig -> config.apiKey.isNotBlank()
+                                        is MiniMaxTtsConfig -> config.apiKey.isNotBlank()
+                                        else -> false
+                                    }
+
+                                    if (!isConfigured) {
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("请先完成引擎配置")
+                                        }
+                                        viewModel.openConfigSheet()
+                                        return@VoicePreview
+                                    }
+
+                                    viewModel.playDemo(currentEngine.id, inputText, config)
+                                },
+                                onStopClick = {
+                                    viewModel.stopDemo()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                    } else {
+                        PlaylistScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onPlayAllClick = {
+                                val intent = Intent(context, BackgroundPlaybackService::class.java).apply {
+                                    action = BackgroundPlaybackService.ACTION_PLAY
+                                    putExtra(BackgroundPlaybackService.EXTRA_ENGINE_ID, currentEngine.id)
+                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(intent)
+                                } else {
+                                    context.startService(intent)
+                                }
+                            }
                         )
-
-                        VoicePreview(
-                            inputText = inputText,
-                            onInputTextChange = { inputText = it },
-                            availableVoices = availableVoices,
-                            selectedVoice = selectedVoice,
-                            onVoiceSelected = { voice -> selectedVoice = voice },
-                            isPlaying = isPlaying,
-                            onPlayClick = {
-                                if (inputText.isBlank()) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("请输入要合成的文本")
-                                    }
-                                    return@VoicePreview
-                                }
-
-                                val config = when (savedConfig) {
-                                    is Qwen3TtsConfig -> {
-                                        val qwenConfig = savedConfig as? Qwen3TtsConfig ?: Qwen3TtsConfig()
-                                        qwenConfig.copy(voiceId = selectedVoice?.voiceId ?: qwenConfig.voiceId)
-                                    }
-                                    is SeedTts2Config -> {
-                                        val seedConfig = savedConfig as? SeedTts2Config ?: SeedTts2Config()
-                                        seedConfig.copy(voiceId = selectedVoice?.voiceId ?: seedConfig.voiceId)
-                                    }
-                                    is TencentTtsConfig -> {
-                                        val tencentConfig = savedConfig as? TencentTtsConfig ?: TencentTtsConfig()
-                                        tencentConfig.copy(voiceId = selectedVoice?.voiceId ?: tencentConfig.voiceId)
-                                    }
-                                    is MicrosoftTtsConfig -> {
-                                        val msConfig = savedConfig as? MicrosoftTtsConfig ?: MicrosoftTtsConfig()
-                                        msConfig.copy(voiceId = selectedVoice?.voiceId ?: msConfig.voiceId)
-                                    }
-                                    is XiaoMiMimoConfig -> {
-                                        val xmConfig = savedConfig as? XiaoMiMimoConfig ?: XiaoMiMimoConfig()
-                                        xmConfig.copy(voiceId = selectedVoice?.voiceId ?: xmConfig.voiceId)
-                                    }
-                                    is MiniMaxTtsConfig -> {
-                                        val mmConfig = savedConfig as? MiniMaxTtsConfig ?: MiniMaxTtsConfig()
-                                        mmConfig.copy(voiceId = selectedVoice?.voiceId ?: mmConfig.voiceId)
-                                    }
-                                    else -> savedConfig
-                                }
-
-                                val isConfigured = when (config) {
-                                    is Qwen3TtsConfig -> config.apiKey.isNotBlank()
-                                    is SeedTts2Config -> config.apiKey.isNotBlank()
-                                    is TencentTtsConfig -> config.appId.isNotBlank() && 
-                                            config.secretId.isNotBlank() && 
-                                            config.secretKey.isNotBlank()
-                                    is MicrosoftTtsConfig -> true
-                                    is XiaoMiMimoConfig -> config.apiKey.isNotBlank()
-                                    is MiniMaxTtsConfig -> config.apiKey.isNotBlank()
-                                    else -> false
-                                }
-
-                                if (!isConfigured) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("请先完成引擎配置")
-                                    }
-                                    viewModel.openConfigSheet()
-                                    return@VoicePreview
-                                }
-
-                                viewModel.playDemo(currentEngine.id, inputText, config)
-                            },
-                            onStopClick = {
-                                viewModel.stopDemo()
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
                     }
                 }
             }

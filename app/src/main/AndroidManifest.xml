@@ -68,6 +68,11 @@
                 android:resource="@xml/tts_data_sources" />
         </service>
 
+        <service
+            android:name=".service.player.BackgroundPlaybackService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
         <activity android:name=".TalkifySampleTextActivity"
             android:exported="true">
             <intent-filter>

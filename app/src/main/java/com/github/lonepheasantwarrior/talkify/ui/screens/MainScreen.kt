@@ -9,9 +9,6 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,17 +108,13 @@ fun MainScreen(
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // --- 启动流程状态管理 ---
     val startupState by viewModel.uiState.collectAsState()
-    val isDefaultEngine by viewModel.isDefaultEngine.collectAsState()
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME && startupState == StartupState.Completed) {
-                viewModel.refreshDefaultEngineStatus()
-            }
+            // isDefaultEngine 功能已移除，此处可根据需要添加其他生命周期监听
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -281,32 +274,6 @@ fun MainScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            val context = LocalContext.current
-            val aboutPageOpenedBefore = remember {
-                context.getSharedPreferences("talkify_app_config", Context.MODE_PRIVATE)
-                    .getBoolean("has_opened_about_page", false)
-            }
-            var aboutHintDismissed by remember { mutableStateOf(false) }
-
-            AnimatedVisibility(
-                visible = currentTab == 0 && !aboutPageOpenedBefore && !aboutHintDismissed && startupState == StartupState.Completed,
-                enter = slideInVertically(initialOffsetY = { -it }),
-                exit = slideOutVertically(targetOffsetY = { -it })
-            ) {
-                AboutPageHintBanner(
-                    onClick = { aboutHintDismissed = true }
-                )
-            }
-
-            AnimatedVisibility(
-                visible = !isDefaultEngine && startupState == StartupState.Completed,
-                enter = slideInVertically(initialOffsetY = { -it }),
-                exit = slideOutVertically(targetOffsetY = { -it })
-            ) {
-                 DefaultEngineBanner(
-                     onClick = { viewModel.openTtsSettings() }
-                 )
-            }
 
             when (startupState) {
                 StartupState.CheckingNetwork -> {
@@ -346,17 +313,7 @@ fun MainScreen(
                         // Tab 0: 播放列表
                         PlaylistScreen(
                             modifier = Modifier.fillMaxSize(),
-                            onPlayAllClick = {
-                                val intent = Intent(context, BackgroundPlaybackService::class.java).apply {
-                                    action = BackgroundPlaybackService.ACTION_PLAY
-                                    putExtra(BackgroundPlaybackService.EXTRA_ENGINE_ID, currentEngine.id)
-                                }
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    context.startForegroundService(intent)
-                                } else {
-                                    context.startService(intent)
-                                }
-                            }
+                            currentEngineId = currentEngine.id
                         )
                     } else {
                         // Tab 1: 引擎配置

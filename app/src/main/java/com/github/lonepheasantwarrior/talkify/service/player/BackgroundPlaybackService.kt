@@ -29,25 +29,29 @@ import kotlinx.coroutines.launch
 class BackgroundPlaybackService : Service() {
 
     companion object {
-        const val ACTION_PLAY = "com.github.lonepheasantwarrior.talkify.ACTION_PLAY"
-        const val ACTION_PAUSE = "com.github.lonepheasantwarrior.talkify.ACTION_PAUSE"
-        const val ACTION_NEXT = "com.github.lonepheasantwarrior.talkify.ACTION_NEXT"
-        const val ACTION_STOP = "com.github.lonepheasantwarrior.talkify.ACTION_STOP"
-        
+        const val ACTION_PLAY        = "io.shishi.reader.ACTION_PLAY"
+        const val ACTION_PLAY_ITEM   = "io.shishi.reader.ACTION_PLAY_ITEM"  // 直接播放指定条目
+        const val ACTION_PAUSE       = "io.shishi.reader.ACTION_PAUSE"
+        const val ACTION_NEXT        = "io.shishi.reader.ACTION_NEXT"
+        const val ACTION_STOP        = "io.shishi.reader.ACTION_STOP"
+
         const val EXTRA_ENGINE_ID = "engine_id"
-        
+        const val EXTRA_ITEM_ID   = "item_id"   // 配合 ACTION_PLAY_ITEM
+        const val EXTRA_SPEED     = "speed"     // 倍速：1.0f / 1.5f / 2.0f
+
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "playback_channel"
         private const val TAG = "BackgroundPlaybackService"
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-    
+
     private var demoService: TalkifyTtsDemoService? = null
     private var currentEngineId: String? = null
     private var currentConfig: BaseEngineConfig? = null
     private var currentPlayingItem: PlaylistItem? = null
     private var playlistObserverJob: Job? = null
+    private var currentSpeed: Float = 1.0f  // 播放倍速
 
     override fun onCreate() {
         super.onCreate()
@@ -63,16 +67,37 @@ class BackgroundPlaybackService : Service() {
         intent?.action?.let { action ->
             when (action) {
                 ACTION_PLAY -> {
-                    // Update configuration if passed
                     val engineId = intent.getStringExtra(EXTRA_ENGINE_ID)
                     if (engineId != null && engineId != currentEngineId) {
                         currentEngineId = engineId
                         initializeDemoService(engineId)
                     }
-                    // For the MVP, we assume Config is serialized or injected, 
-                    // but we can fetch it dynamically via repository in a real case.
-                    // For now, Play next idle item
+                    val speed = intent.getFloatExtra(EXTRA_SPEED, 1.0f)
+                    currentSpeed = speed
                     playNextItem()
+                }
+                ACTION_PLAY_ITEM -> {
+                    // 直接播放指定 itemId
+                    val itemId = intent.getStringExtra(EXTRA_ITEM_ID) ?: return START_NOT_STICKY
+                    val engineId = intent.getStringExtra(EXTRA_ENGINE_ID)
+                    if (engineId != null && engineId != currentEngineId) {
+                        currentEngineId = engineId
+                        initializeDemoService(engineId)
+                    }
+                    val speed = intent.getFloatExtra(EXTRA_SPEED, currentSpeed)
+                    currentSpeed = speed
+                    // 停止当前播放，将目标条目重置为 IDLE 再播放
+                    demoService?.stop()
+                    val target = PlaylistManager.playlist.value.find { it.id == itemId }
+                    if (target != null) {
+                        PlaylistManager.markAllAs(PlaylistItemStatus.IDLE)
+                        currentPlayingItem = null
+                        // 将目标之前的条目标记为 COMPLETED，使得从目标开始播
+                        val list = PlaylistManager.playlist.value
+                        val idx = list.indexOfFirst { it.id == itemId }
+                        list.take(idx).forEach { PlaylistManager.updateItemStatus(it.id, PlaylistItemStatus.COMPLETED) }
+                        playNextItem()
+                    }
                 }
                 ACTION_PAUSE, ACTION_STOP -> {
                     stopPlayback()

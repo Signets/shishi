@@ -33,6 +33,13 @@ class TalkifyAudioPlayer(
 
     private var audioTrack: AudioTrack? = null
 
+    /** 保护 AudioTrack 并发操作的锁 */
+    private val trackLock = Any()
+
+    /** 标记是否已被释放，write 前必须检查 */
+    @Volatile
+    private var isReleased = false
+
     private var isPlaying = AtomicBoolean(false)
 
     private var isPlaybackStarted = AtomicBoolean(false)
@@ -82,6 +89,7 @@ class TalkifyAudioPlayer(
         )
     ): Boolean {
         release()
+        isReleased = false  // createPlayer 意味着重新初始化
 
         val bufferSize = AudioTrack.getMinBufferSize(
             audioFormat.sampleRate,
@@ -121,39 +129,43 @@ class TalkifyAudioPlayer(
             return false
         }
 
-        var track = audioTrack
-        if (track == null) {
-            TtsLogger.d("AudioTrack not initialized, creating now...")
-            if (!createPlayer()) {
-                return false
-            }
-            track = audioTrack
-        }
+        synchronized(trackLock) {
+            if (isReleased) return false
 
-        return try {
-            val wasPlaying = isPlaying.getAndSet(true)
-            if (!wasPlaying) {
-                isPlaybackStarted.set(true)
-                totalAudioBytes = audioData.size
-                track?.play()
-                TtsLogger.d("Playback started")
-                startProgressReporting()
-            } else {
-                totalAudioBytes += audioData.size
+            var track = audioTrack
+            if (track == null) {
+                TtsLogger.d("AudioTrack not initialized, creating now...")
+                if (!createPlayer()) {
+                    return false
+                }
+                track = audioTrack
             }
 
-            val writtenBytes = track?.write(audioData, 0, audioData.size) ?: -1
-            if (writtenBytes > 0) {
-                TtsLogger.v("Written $writtenBytes bytes to AudioTrack, total: $totalAudioBytes")
+            return try {
+                val wasPlaying = isPlaying.getAndSet(true)
+                if (!wasPlaying) {
+                    isPlaybackStarted.set(true)
+                    totalAudioBytes = audioData.size
+                    track?.play()
+                    TtsLogger.d("Playback started")
+                    startProgressReporting()
+                } else {
+                    totalAudioBytes += audioData.size
+                }
+
+                val writtenBytes = track?.write(audioData, 0, audioData.size) ?: -1
+                if (writtenBytes > 0) {
+                    TtsLogger.v("Written $writtenBytes bytes to AudioTrack, total: $totalAudioBytes")
+                }
+                true
+            } catch (e: Exception) {
+                isPlaying.set(false)
+                isPlaybackStarted.set(false)
+                val errorMsg = "Failed to play audio: ${e.message}"
+                TtsLogger.e(errorMsg, e)
+                notifyError(errorMsg)
+                false
             }
-            true
-        } catch (e: Exception) {
-            isPlaying.set(false)
-            isPlaybackStarted.set(false)
-            val errorMsg = "Failed to play audio: ${e.message}"
-            TtsLogger.e(errorMsg, e)
-            notifyError(errorMsg)
-            false
         }
     }
 
@@ -168,16 +180,19 @@ class TalkifyAudioPlayer(
             return audioData.size
         }
 
-        return try {
-            val writtenBytes = audioTrack?.write(audioData, 0, audioData.size) ?: -1
-            if (writtenBytes > 0) {
-                totalAudioBytes += writtenBytes
-                TtsLogger.v("Streamed $writtenBytes bytes to AudioTrack")
+        synchronized(trackLock) {
+            if (isReleased) return -1
+            return try {
+                val writtenBytes = audioTrack?.write(audioData, 0, audioData.size) ?: -1
+                if (writtenBytes > 0) {
+                    totalAudioBytes += writtenBytes
+                    TtsLogger.v("Streamed $writtenBytes bytes to AudioTrack")
+                }
+                writtenBytes
+            } catch (e: Exception) {
+                TtsLogger.e("Failed to write audio data: ${e.message}", e)
+                -1
             }
-            writtenBytes
-        } catch (e: Exception) {
-            TtsLogger.e("Failed to write audio data: ${e.message}", e)
-            -1
         }
     }
 
@@ -213,37 +228,45 @@ class TalkifyAudioPlayer(
     }
 
     fun stop() {
-        if (isPlaying.get()) {
-            try {
-                isPlaying.set(false)
-                isPlaybackStarted.set(false)
-                audioTrack?.stop()
-                playbackProgressJob?.cancel()
-                TtsLogger.d("Playback stopped")
-            } catch (e: Exception) {
-                val errorMsg = "Failed to stop playback: ${e.message}"
-                TtsLogger.e(errorMsg, e)
-                notifyError(errorMsg)
+        synchronized(trackLock) {
+            if (isPlaying.get()) {
+                try {
+                    isPlaying.set(false)
+                    isPlaybackStarted.set(false)
+                    audioTrack?.stop()
+                    playbackProgressJob?.cancel()
+                    TtsLogger.d("Playback stopped")
+                } catch (e: Exception) {
+                    val errorMsg = "Failed to stop playback: ${e.message}"
+                    TtsLogger.e(errorMsg, e)
+                    notifyError(errorMsg)
+                }
             }
         }
     }
 
     fun release() {
-        playbackProgressJob?.cancel()
-        playbackProgressJob = null
-        isPlaying.set(false)
-        isPlaybackStarted.set(false)
+        synchronized(trackLock) {
+            isReleased = true
+            playbackProgressJob?.cancel()
+            playbackProgressJob = null
+            isPlaying.set(false)
+            isPlaybackStarted.set(false)
 
-        try {
-            audioTrack?.release()
-            TtsLogger.d("AudioTrack released")
-        } catch (e: Exception) {
-            val errorMsg = "Error releasing AudioTrack: ${e.message}"
-            TtsLogger.e(errorMsg, e)
+            try {
+                audioTrack?.stop()
+            } catch (_: Exception) { /* 忽略：已经 stop 或未启动 */ }
+            try {
+                audioTrack?.release()
+                TtsLogger.d("AudioTrack released")
+            } catch (e: Exception) {
+                val errorMsg = "Error releasing AudioTrack: ${e.message}"
+                TtsLogger.e(errorMsg, e)
+            }
+            audioTrack = null
+            totalAudioBytes = 0
+            progressListeners.clear()
         }
-        audioTrack = null
-        totalAudioBytes = 0
-        progressListeners.clear()
     }
 
     fun isCurrentlyPlaying(): Boolean {

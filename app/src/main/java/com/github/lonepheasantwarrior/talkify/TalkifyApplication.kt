@@ -5,6 +5,8 @@ import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.Ta
 import com.github.lonepheasantwarrior.talkify.infrastructure.app.notification.TalkifyNotificationHelper
 import com.github.lonepheasantwarrior.talkify.service.TtsLogger
 
+import com.github.lonepheasantwarrior.talkify.domain.playlist.PlaylistManager
+
 class TalkifyApplication : Application() {
 
     companion object {
@@ -16,6 +18,7 @@ class TalkifyApplication : Application() {
         TtsLogger.i(TAG) { "TalkifyApplication onCreate" }
         TalkifyAppHolder.setContext(this)
         TalkifyExceptionHandler.initialize()
+        PlaylistManager.init(this)   // 持久化播放列表初始化
         createNotificationChannels()
     }
 

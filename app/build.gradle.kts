@@ -12,7 +12,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.github.lonepheasantwarrior.talkify"
+        applicationId = "io.shishi.reader"
         minSdk = 30
         targetSdk = 36
         versionCode = 24

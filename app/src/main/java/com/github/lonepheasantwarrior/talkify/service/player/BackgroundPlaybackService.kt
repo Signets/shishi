@@ -132,27 +132,64 @@ class BackgroundPlaybackService : Service() {
     }
 
     private fun playNextItem() {
-        val nextItem = PlaylistManager.getNextItemAfter(currentPlayingItem?.id ?: "") 
+        val nextItem = PlaylistManager.getNextItemAfter(currentPlayingItem?.id ?: "")
             ?: PlaylistManager.getNextIdleItem()
 
-        if (nextItem != null) {
-            currentPlayingItem = nextItem
-            
-            // To provide the proper config, we must load it via Repository 
-            // In the extreme MVP, we can retrieve it directly from AppConfig/EngineConfig repo here
-            val configRepo = com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineFactory.createConfigRepository(currentEngineId ?: "com.github.lonepheasantwarrior.talkify.qwen3", this)
-            val config = configRepo?.getConfig(currentEngineId ?: "com.github.lonepheasantwarrior.talkify.qwen3")
-            
-            if (config != null) {
-                demoService?.speak(nextItem.content, config)
-            } else {
-                 updateNotification("无法加载引擎配置")
-            }
-        } else {
-            // End of playlist
+        if (nextItem == null) {
+            // 列表播放完毕
             currentPlayingItem = null
             stopPlayback()
+            return
         }
+
+        currentPlayingItem = nextItem
+        PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.PLAYING)
+
+        val engineId = currentEngineId ?: "com.github.lonepheasantwarrior.talkify.qwen3"
+        val configRepo = com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineFactory
+            .createConfigRepository(engineId, this)
+        val config = configRepo?.getConfig(engineId)
+
+        if (config == null) {
+            updateNotification("无法加载引擎配置")
+            PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.ERROR)
+            return
+        }
+
+        if (nextItem.isUrl) {
+            // URL 条目：先在 IO 线程抓取正文，再朗读
+            updateNotification("正在解析链接…")
+            serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                when (val result = UrlContentFetcher.fetch(nextItem.content)) {
+                    is UrlContentFetcher.FetchResult.Success -> {
+                        // 同时把标题回写到 PlaylistItem（仅内存，方便 UI 显示）
+                        PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.PLAYING)
+                        withMain {
+                            updateNotification("正在播放: ${result.title.take(20)}")
+                            demoService?.speak(result.content, config)
+                        }
+                    }
+                    is UrlContentFetcher.FetchResult.Error -> {
+                        TtsLogger.w(TAG) { "URL 抓取失败: ${result.message}" }
+                        withMain {
+                            PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.ERROR)
+                            updateNotification("链接解析失败: ${result.message.take(30)}")
+                            // 自动跳下一条
+                            playNextItem()
+                        }
+                    }
+                }
+            }
+        } else {
+            // 普通文本条目：直接朗读
+            updateNotification("正在播放: ${nextItem.content.take(20)}")
+            demoService?.speak(nextItem.content, config)
+        }
+    }
+
+    /** 在主线程执行 lambda（辅助函数） */
+    private suspend fun withMain(block: () -> Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { block() }
     }
 
     private fun skipToNext() {

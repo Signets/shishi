@@ -28,9 +28,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.List
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -219,7 +218,7 @@ fun MainScreen(
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         floatingActionButton = {
-            if (currentTab == 0) {
+            if (currentTab == 1) {
                 FloatingActionButton(
                     onClick = { viewModel.openConfigSheet() },
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
@@ -235,14 +234,14 @@ fun MainScreen(
         bottomBar = {
             NavigationBar {
                 NavigationBarItem(
-                    icon = { Icon(Icons.Default.Home, contentDescription = "引擎") },
-                    label = { Text("引擎配置") },
+                    icon = { Icon(Icons.Default.Headphones, contentDescription = "播放列表") },
+                    label = { Text("播放列表") },
                     selected = currentTab == 0,
                     onClick = { currentTab = 0 }
                 )
                 NavigationBarItem(
-                    icon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "播放列表") },
-                    label = { Text("播放列表") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = "引擎设置") },
+                    label = { Text("引擎设置") },
                     selected = currentTab == 1,
                     onClick = { currentTab = 1 }
                 )
@@ -255,7 +254,7 @@ fun MainScreen(
                         modifier = Modifier.clickable(onClick = onAboutClick)
                     ) {
                         Text(
-                            text = "Talkify",
+                            text = "声阅",
                             style = MaterialTheme.typography.headlineLarge
                         )
                         Text(
@@ -342,7 +341,23 @@ fun MainScreen(
                 }
                 else -> {
                     if (currentTab == 0) {
-                        // 网络检查通过，显示主界面内容
+                        // Tab 0: 播放列表
+                        PlaylistScreen(
+                            modifier = Modifier.fillMaxSize(),
+                            onPlayAllClick = {
+                                val intent = Intent(context, BackgroundPlaybackService::class.java).apply {
+                                    action = BackgroundPlaybackService.ACTION_PLAY
+                                    putExtra(BackgroundPlaybackService.EXTRA_ENGINE_ID, currentEngine.id)
+                                }
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                                    context.startForegroundService(intent)
+                                } else {
+                                    context.startService(intent)
+                                }
+                            }
+                        )
+                    } else {
+                        // Tab 1: 引擎配置
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -435,21 +450,6 @@ fun MainScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
                         }
-                    } else {
-                        PlaylistScreen(
-                            modifier = Modifier.fillMaxSize(),
-                            onPlayAllClick = {
-                                val intent = Intent(context, BackgroundPlaybackService::class.java).apply {
-                                    action = BackgroundPlaybackService.ACTION_PLAY
-                                    putExtra(BackgroundPlaybackService.EXTRA_ENGINE_ID, currentEngine.id)
-                                }
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                                    context.startForegroundService(intent)
-                                } else {
-                                    context.startService(intent)
-                                }
-                            }
-                        )
                     }
                 }
             }

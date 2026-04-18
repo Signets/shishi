@@ -88,4 +88,7 @@ dependencies {
     
     // JLayer 用于 MP3 流式解码
     implementation(libs.jlayer)
+
+    // Jsoup 用于解析网页 HTML 正文（微信公众号文章等）
+    implementation(libs.jsoup)
 }

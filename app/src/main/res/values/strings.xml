@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Talkify</string>
+    <string name="app_name">声阅</string>
 
     <!-- 通用 -->
     <string name="save">保存</string>
@@ -12,7 +12,7 @@
     <string name="retry">重试</string>
 
     <!-- 主界面 -->
-    <string name="app_subtitle">AI 语音合成</string>
+    <string name="app_subtitle">剪贴板后台朗读</string>
     <string name="synthesis_engine">合成引擎</string>
     <string name="select_engine">选择合成引擎</string>
     <string name="provider_format">提供商: %1$s</string>
@@ -55,7 +55,7 @@
     <string name="tts_error_no_engine">未找到可用的 TTS 引擎</string>
     <string name="tts_error_engine_not_found">引擎不存在</string>
     <string name="tts_error_engine_not_configured">合成引擎未配置</string>
-    <string name="tts_error_config_not_ready">请完成Talkify参数设置</string>
+    <string name="tts_error_config_not_ready">请完成声阅参数设置</string>
     <string name="tts_error_no_engine_id_available">合成引擎未选择</string>
     <string name="tts_error_engine_not_ready">合成引擎未初始化</string>
     <string name="tts_error_synthesis_failed">语音合成失败</string>
@@ -87,14 +87,14 @@
 
     <!-- 通知权限 -->
     <string name="notification_permission_title">通知权限</string>
-    <string name="notification_permission_message">Talkify 是一款语音合成应用，工作时需要在后台显示朗读状态通知。授予通知权限后，您可以更好地了解应用运行状态。</string>
+    <string name="notification_permission_message">声阅 是一款后台朗读应用，工作时需要在后台显示朗读状态通知。授予通知权限后，您可以更好地了解应用运行状态。</string>
     <string name="notification_permission_agree">同意</string>
     <string name="notification_permission_ask_later">以后再说</string>
     <string name="notification_permission_denied">未授予通知权限，部分功能可能受限</string>
 
     <!-- 电池优化 -->
     <string name="battery_optimization_title">允许后台运行</string>
-    <string name="battery_optimization_message">Talkify 在后台进行语音合成时，可能会被系统电池优化策略中断网络连接，导致朗读停止。建议您允许 Talkify 忽略电池优化，以获得稳定的后台朗读体验。</string>
+    <string name="battery_optimization_message">声阅 在后台进行语音合成时，可能会被系统电池优化策略中断网络连接，导致朗读停止。建议您允许声阅忽略电池优化，以获得稳定的后台朗读体验。</string>
     <string name="battery_optimization_allow">去设置</string>
     <string name="battery_optimization_skip">以后再说</string>
 
@@ -121,23 +121,23 @@
     <!-- 前台服务通知 -->
     <string name="notification_channel_name">朗读服务</string>
     <string name="notification_channel_description">显示正在进行的朗读服务状态</string>
-    <string name="notification_title">Talkify 正在朗读</string>
+    <string name="notification_title">声阅 正在朗读</string>
     <string name="notification_text">点击打开应用</string>
 
     <!-- 默认引擎提示 -->
     <string name="default_engine_banner_title">设为默认引擎</string>
-    <string name="default_engine_banner_content">点击此处将 Talkify 设为默认语音合成引擎</string>
+    <string name="default_engine_banner_content">点击此处将声阅设为默认语音合成引擎</string>
 
     <!-- 关于页面提示 -->
     <string name="about_page_hint_banner_title">关于应用</string>
-    <string name="about_page_hint_banner_content">点击上方的 Talkify 标题可打开关于页面</string>
+    <string name="about_page_hint_banner_content">点击上方的声阅标题可打开关于页面</string>
 
     <!-- 关于页面 -->
     <string name="about_title">关于</string>
     <string name="about_version_format">版本 %1$s</string>
     <string name="about_github">开源仓库</string>
-    <string name="about_github_url">https://github.com/LonePheasantWarrior/TalkifyTTS</string>
-    <string name="about_description">一款基于 Android 的现代化 TTS 引擎应用，连接云端大模型的高质量语音合成能力</string>
+    <string name="about_github_url">https://github.com/Signets/shishi</string>
+    <string name="about_description">复制文本或链接，声阅自动识别并后台朗读——支持微信公众号文章等多种内容源</string>
     <string name="about_donate">打赏支持</string>
     <string name="about_donate_description">如果这个项目对你有帮助，欢迎打赏支持</string>
 
@@ -157,14 +157,14 @@
     <!-- 打赏功能 -->
     <string name="donate_title">选择打赏方式</string>
     <string name="donate_wechat">微信</string>
-    <string name="donate_alipay">支付宝</string>
+    <string name="donate_alipay">淘宝</string>
     <string name="donate_cancel">取消</string>
 
     <!-- 打赏操作说明 -->
     <string name="donate_wechat_title">微信打赏</string>
     <string name="donate_wechat_message">二维码图片已保存到手机相册。\n\n请打开微信，点击「扫一扫」，然后选择「相册」扫描二维码完成打赏。</string>
-    <string name="donate_alipay_title">支付宝打赏</string>
-    <string name="donate_alipay_message">二维码图片已保存到手机相册。\n\n请打开支付宝，点击「扫一扫」，然后选择「相册」扫描二维码完成打赏。</string>
+    <string name="donate_alipay_title">淘宝打赏</string>
+    <string name="donate_alipay_message">二维码图片已保存到手机相册。\n\n请打开淘宝，点击「扫一扫」，然后选择「相册」扫描二维码。</string>
     <string name="donate_save_success">二维码已保存到相册</string>
     <string name="donate_save_failed">保存失败，请检查存储权限</string>
     <string name="donate_photos_permission_title">需要存储权限</string>

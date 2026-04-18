@@ -548,14 +548,14 @@ private suspend fun saveQrCodeToGallery(context: Context, channel: DonateChannel
             val bitmap = drawable?.toBitmap() ?: return@withContext false
 
             val filename = when (channel) {
-                DonateChannel.WECHAT -> "talkify_wechat_donate_qr.png"
-                DonateChannel.ALIPAY -> "talkify_alipay_donate_qr.png"
+                DonateChannel.WECHAT -> "shishi_wechat_donate_qr.png"
+                DonateChannel.ALIPAY -> "shishi_taobao_donate_qr.png"
             }
 
             val contentValues = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
                 put(MediaStore.MediaColumns.MIME_TYPE, "image/png")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/Talkify")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/声阅")
             }
             val uri = context.contentResolver.insert(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,

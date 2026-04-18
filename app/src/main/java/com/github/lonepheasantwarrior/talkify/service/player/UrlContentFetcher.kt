@@ -52,8 +52,9 @@ object UrlContentFetcher {
             if (text.isNullOrBlank()) {
                 // 尝试降级：直接取所有 <p> 文本
                 val fallback = doc.select("p")
-                    .joinToString("\n") { it.text().trim() }
+                    .map { it.text().trim() }
                     .filter { it.isNotBlank() }
+                    .joinToString("\n")
 
                 if (fallback.isBlank()) {
                     TtsLogger.w(TAG) { "正文提取为空（含降级尝试）: $url" }

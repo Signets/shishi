@@ -102,7 +102,12 @@ class MainActivity : ComponentActivity() {
                         else "\"${clipText.take(60)}${if (clipText.length > 60) "…" else ""}\""
 
                         AlertDialog(
-                            onDismissRequest = { showClipboardDialog.value = false },
+                            onDismissRequest = {
+                                // 点弹窗外关闭：记录已读（防止焦点变化立即再弹），但不加入列表
+                                getSharedPreferences("shishi_clip_state", MODE_PRIVATE)
+                                    .edit().putString("last_clip", clipText).apply()
+                                showClipboardDialog.value = false
+                            },
                             title = { Text(if (clipIsUrl) "发现复制的链接" else "发现复制的内容") },
                             text = {
                                 Text(
@@ -113,7 +118,7 @@ class MainActivity : ComponentActivity() {
                                 )
                             },
                             confirmButton = {
-                                // 【立即朗读】：加到列表 → 启动服务播放
+                                // 【立即朗读】：加列表 + 启动服务
                                 TextButton(onClick = {
                                     recordAndAdd(clipText, clipIsUrl)
                                     showClipboardDialog.value = false
@@ -121,11 +126,19 @@ class MainActivity : ComponentActivity() {
                                 }) { Text("立即朗读") }
                             },
                             dismissButton = {
-                                // 【稍后朗读】：只加列表，不触发播放
-                                TextButton(onClick = {
-                                    recordAndAdd(clipText, clipIsUrl)
-                                    showClipboardDialog.value = false
-                                }) { Text("稍后朗读") }
+                                Row {
+                                    // 【稍后加入】：只加列表，不播放
+                                    TextButton(onClick = {
+                                        recordAndAdd(clipText, clipIsUrl)
+                                        showClipboardDialog.value = false
+                                    }) { Text("加入列表") }
+                                    // 【忽略】：记录但不加列表
+                                    TextButton(onClick = {
+                                        getSharedPreferences("shishi_clip_state", MODE_PRIVATE)
+                                            .edit().putString("last_clip", clipText).apply()
+                                        showClipboardDialog.value = false
+                                    }) { Text("忽略") }
+                                }
                             }
                         )
                     }

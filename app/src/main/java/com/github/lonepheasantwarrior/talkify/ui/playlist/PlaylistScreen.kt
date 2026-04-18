@@ -164,8 +164,7 @@ fun PlaylistItemCard(
         targetValue = when (item.status) {
             PlaylistItemStatus.PLAYING -> MaterialTheme.colorScheme.primaryContainer
             PlaylistItemStatus.COMPLETED -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            PlaylistItemStatus.ERROR -> MaterialTheme.colorScheme.errorContainer
-            else -> MaterialTheme.colorScheme.surfaceVariant
+            else -> MaterialTheme.colorScheme.surfaceVariant   // IDLE / ERROR 均显示普通状态
         },
         label = "cardColor"
     )
@@ -173,15 +172,7 @@ fun PlaylistItemCard(
     val textColor = when (item.status) {
         PlaylistItemStatus.PLAYING -> MaterialTheme.colorScheme.onPrimaryContainer
         PlaylistItemStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        PlaylistItemStatus.ERROR -> MaterialTheme.colorScheme.onErrorContainer
         else -> MaterialTheme.colorScheme.onSurfaceVariant
-    }
-
-    val statusLabel = when (item.status) {
-        PlaylistItemStatus.IDLE -> "待播放"
-        PlaylistItemStatus.PLAYING -> "正在播放"
-        PlaylistItemStatus.COMPLETED -> "已播放"
-        PlaylistItemStatus.ERROR -> "播放出错"
     }
 
     Card(
@@ -209,13 +200,7 @@ fun PlaylistItemCard(
 
             // 中间：内容文本
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = statusLabel,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = textColor.copy(alpha = 0.7f)
-                )
-                Spacer(Modifier.height(2.dp))
-                // 标题或正文预览
+                // 标题或正文预览（URL 条目优先显示标题）
                 val displayText = if (!item.title.isNullOrBlank() && item.isUrl) item.title
                                   else item.content
                 Text(
@@ -228,7 +213,7 @@ fun PlaylistItemCard(
                 )
                 // URL 条目显示链接域名
                 if (item.isUrl) {
-                    Spacer(Modifier.height(2.dp))
+                    Spacer(Modifier.height(3.dp))
                     Text(
                         text = try { java.net.URL(item.content).host } catch (_: Exception) { item.content.take(40) },
                         style = MaterialTheme.typography.labelSmall,

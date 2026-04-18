@@ -5,6 +5,7 @@ import java.util.UUID
 enum class PlaylistItemStatus {
     IDLE,
     PLAYING,
+    PAUSED,
     COMPLETED,
     ERROR
 }

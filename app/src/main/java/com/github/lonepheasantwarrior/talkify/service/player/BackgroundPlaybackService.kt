@@ -32,6 +32,7 @@ class BackgroundPlaybackService : Service() {
         const val ACTION_PLAY        = "io.shishi.reader.ACTION_PLAY"
         const val ACTION_PLAY_ITEM   = "io.shishi.reader.ACTION_PLAY_ITEM"  // 直接播放指定条目
         const val ACTION_PAUSE       = "io.shishi.reader.ACTION_PAUSE"
+        const val ACTION_RESUME      = "io.shishi.reader.ACTION_RESUME"
         const val ACTION_NEXT        = "io.shishi.reader.ACTION_NEXT"
         const val ACTION_STOP        = "io.shishi.reader.ACTION_STOP"
 
@@ -99,7 +100,13 @@ class BackgroundPlaybackService : Service() {
                         playNextItem()
                     }
                 }
-                ACTION_PAUSE, ACTION_STOP -> {
+                ACTION_PAUSE -> {
+                    pausePlayback()
+                }
+                ACTION_RESUME -> {
+                    resumePlayback()
+                }
+                ACTION_STOP -> {
                     stopPlayback()
                 }
                 ACTION_NEXT -> {
@@ -191,7 +198,7 @@ class BackgroundPlaybackService : Service() {
                         PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.PLAYING)
                         withMain {
                             updateNotification("正在播放: ${result.title.take(20)}")
-                            demoService?.speak(result.content, config)
+                            demoService?.speak(result.content, config, speed = currentSpeed)
                         }
                     }
                     is UrlContentFetcher.FetchResult.Error -> {
@@ -208,7 +215,7 @@ class BackgroundPlaybackService : Service() {
         } else {
             // 普通文本条目：直接朗读
             updateNotification("正在播放: ${nextItem.content.take(20)}")
-            demoService?.speak(nextItem.content, config)
+            demoService?.speak(nextItem.content, config, speed = currentSpeed)
         }
     }
 
@@ -219,6 +226,24 @@ class BackgroundPlaybackService : Service() {
 
     private fun skipToNext() {
         demoService?.stop() // This will trigger STATE_STOPPED -> playNextItem
+    }
+
+    /** 暂停播放（保留服务和资源，允许恢复） */
+    private fun pausePlayback() {
+        demoService?.pause()
+        currentPlayingItem?.let { item ->
+            PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PAUSED)
+        }
+        updateNotification("已暂停")
+    }
+
+    /** 恢复播放 */
+    private fun resumePlayback() {
+        demoService?.resume()
+        currentPlayingItem?.let { item ->
+            PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PLAYING)
+        }
+        updateNotification("正在播放: ${currentPlayingItem?.content?.take(20) ?: ""}")
     }
 
     private fun stopPlayback() {

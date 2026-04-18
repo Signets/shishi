@@ -1,17 +1,17 @@
 package com.github.lonepheasantwarrior.talkify.ui.playlist
 
-import android.content.Context
 import android.content.Intent
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,35 +25,22 @@ import com.github.lonepheasantwarrior.talkify.domain.playlist.PlaylistItemStatus
 import com.github.lonepheasantwarrior.talkify.domain.playlist.PlaylistManager
 import com.github.lonepheasantwarrior.talkify.service.player.BackgroundPlaybackService
 
-/** 支持的倍速列表，循环切换 */
-private val SPEED_OPTIONS = listOf(1.0f, 1.5f, 2.0f)
-
-/** 倍速对应的显示文字 */
-private fun speedLabel(speed: Float): String = when (speed) {
-    1.0f -> "1×"
-    1.5f -> "1.5×"
-    2.0f -> "2×"
-    else -> "${speed}×"
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
+/**
+ * 播放列表界面。
+ *
+ * - 不再包含独立的 TopAppBar 和倍速 FAB（已迁移到 MainScreen 底部导航栏）。
+ * - [speed] 由父级 MainScreen 管理并传入。
+ * - 暂停使用 ACTION_PAUSE（保留服务），恢复使用 ACTION_RESUME。
+ */
 @Composable
 fun PlaylistScreen(
     modifier: Modifier = Modifier,
     currentEngineId: String = "",
+    speed: Float = 1.0f,
     onPlayAllClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val playlist by PlaylistManager.playlist.collectAsState()
-
-    // 倍速状态（持久化到 SharedPreferences）
-    val speedPrefs = remember { context.getSharedPreferences("shishi_playback", Context.MODE_PRIVATE) }
-    var currentSpeed by remember { mutableStateOf(speedPrefs.getFloat("speed", 1.0f)) }
-
-    fun saveSpeed(speed: Float) {
-        currentSpeed = speed
-        speedPrefs.edit().putFloat("speed", speed).apply()
-    }
 
     /** 启动服务播放指定条目 */
     fun playItem(item: PlaylistItem) {
@@ -61,7 +48,7 @@ fun PlaylistScreen(
             action = BackgroundPlaybackService.ACTION_PLAY_ITEM
             putExtra(BackgroundPlaybackService.EXTRA_ITEM_ID, item.id)
             putExtra(BackgroundPlaybackService.EXTRA_ENGINE_ID, currentEngineId)
-            putExtra(BackgroundPlaybackService.EXTRA_SPEED, currentSpeed)
+            putExtra(BackgroundPlaybackService.EXTRA_SPEED, speed)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -70,87 +57,81 @@ fun PlaylistScreen(
         }
     }
 
-    /** 停止（暂停）当前播放 */
-    fun stopPlayback() {
+    /** 暂停当前播放（保留服务，允许恢复） */
+    fun pausePlayback() {
         val intent = Intent(context, BackgroundPlaybackService::class.java).apply {
-            action = BackgroundPlaybackService.ACTION_STOP
+            action = BackgroundPlaybackService.ACTION_PAUSE
         }
         context.startService(intent)
     }
 
-    Scaffold(
-        modifier = modifier,
-        topBar = {
-            TopAppBar(
-                title = { Text("播放列表") },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
+    /** 恢复当前播放 */
+    fun resumePlayback() {
+        val intent = Intent(context, BackgroundPlaybackService::class.java).apply {
+            action = BackgroundPlaybackService.ACTION_RESUME
+        }
+        context.startService(intent)
+    }
+
+    if (playlist.isEmpty()) {
+        // ---------- 空列表占位 ----------
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "列表为空",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            )
-        },
-        floatingActionButton = {
-            // 右下角：倍速切换按钮
-            FloatingActionButton(
-                onClick = {
-                    val nextIdx = (SPEED_OPTIONS.indexOf(currentSpeed) + 1) % SPEED_OPTIONS.size
-                    saveSpeed(SPEED_OPTIONS[nextIdx])
-                },
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                ) {
-                    Icon(Icons.Default.Speed, contentDescription = "倍速", modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text(speedLabel(currentSpeed), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = "复制文本或链接后打开 APP，即可加入朗读",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                )
             }
         }
-    ) { innerPadding ->
-        if (playlist.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = "列表为空",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        text = "复制文本或链接后打开 APP，即可加入朗读",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
-                }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 88.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(playlist, key = { it.id }) { item ->
-                    PlaylistItemCard(
-                        item = item,
-                        onPlayClick = { playItem(item) },
-                        onPauseClick = { stopPlayback() },
-                        onDeleteClick = { PlaylistManager.removeItem(item.id) }
-                    )
-                }
+    } else {
+        // ---------- 播放列表 ----------
+        LazyColumn(
+            modifier = modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(playlist, key = { it.id }) { item ->
+                PlaylistItemCard(
+                    item = item,
+                    onPlayClick = {
+                        // PAUSED 条目点击 ▶ 时恢复播放，其他状态则重新开始播放
+                        if (item.status == PlaylistItemStatus.PAUSED) {
+                            resumePlayback()
+                        } else {
+                            playItem(item)
+                        }
+                    },
+                    onPauseClick = { pausePlayback() },
+                    onDeleteClick = { PlaylistManager.removeItem(item.id) }
+                )
             }
         }
     }
 }
 
+/**
+ * 单条播放列表卡片。
+ *
+ * 交互规则：
+ * - PLAYING → 显示 ‖ 图标，点击触发暂停
+ * - PAUSED / IDLE → 显示 ▶ 图标，点击触发恢复 / 播放
+ *
+ * 视觉规则：
+ * - PLAYING → primaryContainer（蓝色调高亮）
+ * - PAUSED  → tertiaryContainer（琥珀色调）
+ * - COMPLETED → 半透明 surfaceVariant
+ * - IDLE / ERROR → surfaceVariant
+ */
 @Composable
 fun PlaylistItemCard(
     item: PlaylistItem,
@@ -158,41 +139,54 @@ fun PlaylistItemCard(
     onPauseClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    val isPlaying = item.status == PlaylistItemStatus.PLAYING
+    val isActive = item.status == PlaylistItemStatus.PLAYING ||
+                   item.status == PlaylistItemStatus.PAUSED
 
+    // ---------- 卡片背景色（带过渡动画） ----------
     val containerColor by animateColorAsState(
         targetValue = when (item.status) {
-            PlaylistItemStatus.PLAYING -> MaterialTheme.colorScheme.primaryContainer
+            PlaylistItemStatus.PLAYING   -> MaterialTheme.colorScheme.primaryContainer
+            PlaylistItemStatus.PAUSED    -> MaterialTheme.colorScheme.tertiaryContainer
             PlaylistItemStatus.COMPLETED -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-            else -> MaterialTheme.colorScheme.surfaceVariant   // IDLE / ERROR 均显示普通状态
+            else                         -> MaterialTheme.colorScheme.surfaceVariant
         },
         label = "cardColor"
     )
 
+    // ---------- 文本颜色 ----------
     val textColor = when (item.status) {
-        PlaylistItemStatus.PLAYING -> MaterialTheme.colorScheme.onPrimaryContainer
+        PlaylistItemStatus.PLAYING   -> MaterialTheme.colorScheme.onPrimaryContainer
+        PlaylistItemStatus.PAUSED    -> MaterialTheme.colorScheme.onTertiaryContainer
         PlaylistItemStatus.COMPLETED -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-        else -> MaterialTheme.colorScheme.onSurfaceVariant
+        else                         -> MaterialTheme.colorScheme.onSurfaceVariant
     }
+
+    // ---------- 卡片阴影（带过渡动画） ----------
+    val elevation by animateDpAsState(
+        targetValue = if (isActive) 4.dp else 0.dp,
+        label = "cardElevation"
+    )
 
     Card(
         modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isPlaying) 4.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = elevation)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 12.dp),
+                .padding(horizontal = 12.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 左侧：播放 / 暂停 按钮
+            // 左侧：播放 / 暂停按钮
             IconButton(
-                onClick = if (isPlaying) onPauseClick else onPlayClick
+                onClick = if (item.status == PlaylistItemStatus.PLAYING) onPauseClick else onPlayClick
             ) {
                 Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "暂停" else "播放",
+                    imageVector = if (item.status == PlaylistItemStatus.PLAYING)
+                        Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (item.status == PlaylistItemStatus.PLAYING) "暂停" else "播放",
                     tint = textColor,
                     modifier = Modifier.size(28.dp)
                 )
@@ -208,14 +202,18 @@ fun PlaylistItemCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isPlaying) FontWeight.Medium else FontWeight.Normal,
+                    fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal,
                     color = textColor
                 )
                 // URL 条目显示链接域名
                 if (item.isUrl) {
                     Spacer(Modifier.height(3.dp))
                     Text(
-                        text = try { java.net.URL(item.content).host } catch (_: Exception) { item.content.take(40) },
+                        text = try {
+                            java.net.URL(item.content).host
+                        } catch (_: Exception) {
+                            item.content.take(40)
+                        },
                         style = MaterialTheme.typography.labelSmall,
                         color = textColor.copy(alpha = 0.5f),
                         maxLines = 1,

@@ -227,6 +227,23 @@ class TalkifyAudioPlayer(
         }
     }
 
+    /**
+     * 设置播放倍速（需要 API 23+，项目 minSdk 26 满足）。
+     * 在 play() 之后调用生效。
+     */
+    fun setPlaybackSpeed(speed: Float) {
+        synchronized(trackLock) {
+            try {
+                val track = audioTrack ?: return
+                val params = track.playbackParams.setSpeed(speed)
+                track.playbackParams = params
+                TtsLogger.d("Playback speed set to ${speed}x")
+            } catch (e: Exception) {
+                TtsLogger.e("Failed to set playback speed: ${e.message}", e, TAG)
+            }
+        }
+    }
+
     fun stop() {
         synchronized(trackLock) {
             if (isPlaying.get()) {

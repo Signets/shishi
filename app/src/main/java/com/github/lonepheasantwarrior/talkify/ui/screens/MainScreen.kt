@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.SettingsSuggest
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +52,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -93,6 +95,17 @@ import com.github.lonepheasantwarrior.talkify.ui.components.VoicePreview
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.MainViewModel
 import com.github.lonepheasantwarrior.talkify.ui.viewmodel.StartupState
 import kotlinx.coroutines.launch
+
+/** 支持的倍速列表，循环切换 */
+private val SPEED_OPTIONS = listOf(1.0f, 1.5f, 2.0f)
+
+/** 倍速对应的显示文字 */
+private fun speedLabel(speed: Float): String = when (speed) {
+    1.0f -> "1×"
+    1.5f -> "1.5×"
+    2.0f -> "2×"
+    else -> "${speed}×"
+}
 
 @RequiresApi(Build.VERSION_CODES.TIRAMISU)
 @OptIn(ExperimentalMaterial3Api::class)
@@ -210,6 +223,15 @@ fun MainScreen(
 
     var currentTab by remember { mutableStateOf(0) }
 
+    // 倍速状态（持久化到 SharedPreferences）
+    val speedPrefs = remember { context.getSharedPreferences("shishi_playback", Context.MODE_PRIVATE) }
+    var currentSpeed by remember { mutableStateOf(speedPrefs.getFloat("speed", 1.0f)) }
+
+    fun saveSpeed(speed: Float) {
+        currentSpeed = speed
+        speedPrefs.edit().putFloat("speed", speed).apply()
+    }
+
     Scaffold(
         modifier = modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         floatingActionButton = {
@@ -233,6 +255,21 @@ fun MainScreen(
                     label = { Text("播放列表") },
                     selected = currentTab == 0,
                     onClick = { currentTab = 0 }
+                )
+                // 中间：倍速切换按钮（非导航项，仅作为操作入口）
+                NavigationBarItem(
+                    icon = { Icon(Icons.Default.Speed, contentDescription = "倍速") },
+                    label = {
+                        Text(
+                            text = speedLabel(currentSpeed),
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    selected = false,
+                    onClick = {
+                        val nextIdx = (SPEED_OPTIONS.indexOf(currentSpeed) + 1) % SPEED_OPTIONS.size
+                        saveSpeed(SPEED_OPTIONS[nextIdx])
+                    }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Settings, contentDescription = "引擎设置") },
@@ -313,7 +350,8 @@ fun MainScreen(
                         // Tab 0: 播放列表
                         PlaylistScreen(
                             modifier = Modifier.fillMaxSize(),
-                            currentEngineId = currentEngine.id
+                            currentEngineId = currentEngine.id,
+                            speed = currentSpeed
                         )
                     } else {
                         // Tab 1: 引擎配置

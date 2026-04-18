@@ -31,6 +31,10 @@ class TalkifyTtsDemoService(
     @Volatile
     private var audioPlayer: TalkifyAudioPlayer? = null
 
+    /** 当前播放倍速 */
+    @Volatile
+    private var currentSpeed: Float = 1.0f
+
     @Volatile
     private var isStopped = AtomicBoolean(false)
 
@@ -49,8 +53,10 @@ class TalkifyTtsDemoService(
     fun speak(
         text: String,
         config: BaseEngineConfig,
-        params: SynthesisParams = SynthesisParams(language = "Auto")
+        params: SynthesisParams = SynthesisParams(language = "Auto"),
+        speed: Float = 1.0f
     ) {
+        currentSpeed = speed
         if (currentState == STATE_PLAYING) {
             stop()
         }
@@ -119,6 +125,10 @@ class TalkifyTtsDemoService(
                         }
                     }
                     audioPlayer?.play(audioData)
+                    // 首次写入后设置倍速
+                    if (currentSpeed != 1.0f) {
+                        audioPlayer?.setPlaybackSpeed(currentSpeed)
+                    }
                 } catch (e: Exception) {
                     TtsLogger.e("Audio playback error: ${e.message}", e)
                 }
@@ -135,6 +145,24 @@ class TalkifyTtsDemoService(
                 lastErrorMessage = TtsErrorCode.getErrorMessage(errorCode, error)
                 stopPlayback()
             }
+        }
+    }
+
+    /** 暂停播放（不释放资源，允许恢复） */
+    fun pause() {
+        if (currentState == STATE_PLAYING) {
+            TtsLogger.d("Pausing playback")
+            audioPlayer?.pause()
+            // 不改变 currentState，由外部（Service）管理状态
+        }
+    }
+
+    /** 恢复播放 */
+    fun resume() {
+        TtsLogger.d("Resuming playback")
+        audioPlayer?.resume()
+        if (currentSpeed != 1.0f) {
+            audioPlayer?.setPlaybackSpeed(currentSpeed)
         }
     }
 

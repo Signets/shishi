@@ -48,7 +48,6 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import com.github.lonepheasantwarrior.talkify.ui.playlist.PlaylistScreen
 import com.github.lonepheasantwarrior.talkify.service.player.BackgroundPlaybackService
-import android.content.Intent
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect

@@ -22,7 +22,9 @@ import com.github.lonepheasantwarrior.talkify.ui.theme.TalkifyTheme
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.content.Intent
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue

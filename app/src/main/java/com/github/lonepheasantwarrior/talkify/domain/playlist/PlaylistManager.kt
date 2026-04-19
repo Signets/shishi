@@ -122,6 +122,13 @@ object PlaylistManager {
         return if (index != -1 && index + 1 < list.size) list[index + 1] else null
     }
 
+    /** 获取指定 id 的前一条（不限状态，用于"上一首"） */
+    fun getPreviousItemBefore(id: String): PlaylistItem? {
+        val list = _playlist.value
+        val index = list.indexOfFirst { it.id == id }
+        return if (index > 0) list[index - 1] else null
+    }
+
     fun markAllAs(status: PlaylistItemStatus) {
         _playlist.update { current -> current.map { it.copy(status = status) } }
     }

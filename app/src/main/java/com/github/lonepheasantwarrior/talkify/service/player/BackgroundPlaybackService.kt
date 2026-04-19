@@ -9,6 +9,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
+import android.support.v4.media.MediaMetadataCompat
+import android.support.v4.media.session.MediaSessionCompat
+import android.support.v4.media.session.PlaybackStateCompat
 import androidx.core.app.NotificationCompat
 import com.github.lonepheasantwarrior.talkify.MainActivity
 import com.github.lonepheasantwarrior.talkify.R
@@ -30,15 +33,16 @@ class BackgroundPlaybackService : Service() {
 
     companion object {
         const val ACTION_PLAY        = "io.shishi.reader.ACTION_PLAY"
-        const val ACTION_PLAY_ITEM   = "io.shishi.reader.ACTION_PLAY_ITEM"  // 直接播放指定条目
+        const val ACTION_PLAY_ITEM   = "io.shishi.reader.ACTION_PLAY_ITEM"
         const val ACTION_PAUSE       = "io.shishi.reader.ACTION_PAUSE"
         const val ACTION_RESUME      = "io.shishi.reader.ACTION_RESUME"
+        const val ACTION_PREV        = "io.shishi.reader.ACTION_PREV"
         const val ACTION_NEXT        = "io.shishi.reader.ACTION_NEXT"
         const val ACTION_STOP        = "io.shishi.reader.ACTION_STOP"
 
         const val EXTRA_ENGINE_ID = "engine_id"
-        const val EXTRA_ITEM_ID   = "item_id"   // 配合 ACTION_PLAY_ITEM
-        const val EXTRA_SPEED     = "speed"     // 倍速：1.0f / 1.5f / 2.0f
+        const val EXTRA_ITEM_ID   = "item_id"
+        const val EXTRA_SPEED     = "speed"
 
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "playback_channel"
@@ -52,16 +56,45 @@ class BackgroundPlaybackService : Service() {
     private var currentConfig: BaseEngineConfig? = null
     private var currentPlayingItem: PlaylistItem? = null
     private var playlistObserverJob: Job? = null
-    private var currentSpeed: Float = 1.0f  // 播放倍速
+    private var currentSpeed: Float = 1.0f
+
+    private var mediaSession: MediaSessionCompat? = null
 
     override fun onCreate() {
         super.onCreate()
         TtsLogger.i(TAG) { "Service Created" }
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, createNotification("准备播放"))
+        setupMediaSession()
+        startForeground(NOTIFICATION_ID, createNotification("准备播放", false))
         
-        // Obverve playlist changes if we were paused
         observePlaylist()
+    }
+
+    private fun setupMediaSession() {
+        mediaSession = MediaSessionCompat(this, TAG).apply {
+            setCallback(object : MediaSessionCompat.Callback() {
+                override fun onPlay() {
+                    resumePlayback()
+                }
+
+                override fun onPause() {
+                    pausePlayback()
+                }
+
+                override fun onSkipToNext() {
+                    skipToNext()
+                }
+
+                override fun onSkipToPrevious() {
+                    skipToPrevious()
+                }
+                
+                override fun onStop() {
+                    stopPlayback()
+                }
+            })
+            isActive = true
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -78,7 +111,6 @@ class BackgroundPlaybackService : Service() {
                     playNextItem()
                 }
                 ACTION_PLAY_ITEM -> {
-                    // 直接播放指定 itemId
                     val itemId = intent.getStringExtra(EXTRA_ITEM_ID) ?: return START_NOT_STICKY
                     val engineId = intent.getStringExtra(EXTRA_ENGINE_ID)
                     if (engineId != null && engineId != currentEngineId) {
@@ -87,13 +119,12 @@ class BackgroundPlaybackService : Service() {
                     }
                     val speed = intent.getFloatExtra(EXTRA_SPEED, currentSpeed)
                     currentSpeed = speed
-                    // 停止当前播放，将目标条目重置为 IDLE 再播放
+                    
                     demoService?.stop()
                     val target = PlaylistManager.playlist.value.find { it.id == itemId }
                     if (target != null) {
                         PlaylistManager.markAllAs(PlaylistItemStatus.IDLE)
                         currentPlayingItem = null
-                        // 将目标之前的条目标记为 COMPLETED，使得从目标开始播
                         val list = PlaylistManager.playlist.value
                         val idx = list.indexOfFirst { it.id == itemId }
                         list.take(idx).forEach { PlaylistManager.updateItemStatus(it.id, PlaylistItemStatus.COMPLETED) }
@@ -106,11 +137,14 @@ class BackgroundPlaybackService : Service() {
                 ACTION_RESUME -> {
                     resumePlayback()
                 }
-                ACTION_STOP -> {
-                    stopPlayback()
+                ACTION_PREV -> {
+                    skipToPrevious()
                 }
                 ACTION_NEXT -> {
                     skipToNext()
+                }
+                ACTION_STOP -> {
+                    stopPlayback()
                 }
             }
         }
@@ -123,26 +157,25 @@ class BackgroundPlaybackService : Service() {
             setStateListener { state, errorMessage ->
                 when (state) {
                     TalkifyTtsDemoService.STATE_STOPPED -> {
-                        // Current item finished
                         currentPlayingItem?.let { item ->
                             if (item.status != PlaylistItemStatus.ERROR) {
                                 PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.COMPLETED)
                             }
                         }
-                        // Trigger next
                         playNextItem()
                     }
                     TalkifyTtsDemoService.STATE_ERROR -> {
                         currentPlayingItem?.let { item ->
                             PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.ERROR)
                         }
-                        updateNotification("播放出错: $errorMessage")
-                        // Wait or trigger next depending on strategy. We'll pause for now.
+                        updateNotification("播放出错: $errorMessage", false)
+                        updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
                     }
                     TalkifyTtsDemoService.STATE_PLAYING -> {
                         currentPlayingItem?.let { item ->
                             PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PLAYING)
-                            updateNotification("正在播放: ${item.content.take(20)}...")
+                            updateNotification("正在播放: ${item.content.take(20)}...", true)
+                            updateMediaSessionState(PlaybackStateCompat.STATE_PLAYING)
                         }
                     }
                 }
@@ -154,11 +187,7 @@ class BackgroundPlaybackService : Service() {
         playlistObserverJob?.cancel()
         playlistObserverJob = serviceScope.launch {
             PlaylistManager.playlist.collectLatest { playlist ->
-                // Basic check: if nothing is playing but we have idle items, start.
-                // In actual deployment, user explicit 'play' triggers it.
-                if (demoService?.getState() != TalkifyTtsDemoService.STATE_PLAYING && currentPlayingItem == null) {
-                    // We shouldn't auto play just by observing in this MVP to prevent unwanted background start
-                }
+                
             }
         }
     }
@@ -168,7 +197,6 @@ class BackgroundPlaybackService : Service() {
             ?: PlaylistManager.getNextIdleItem()
 
         if (nextItem == null) {
-            // 列表播放完毕
             currentPlayingItem = null
             stopPlayback()
             return
@@ -176,6 +204,7 @@ class BackgroundPlaybackService : Service() {
 
         currentPlayingItem = nextItem
         PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.PLAYING)
+        updateMediaMetadata(nextItem)
 
         val engineId = currentEngineId ?: "com.github.lonepheasantwarrior.talkify.qwen3"
         val configRepo = com.github.lonepheasantwarrior.talkify.service.engine.TtsEngineFactory
@@ -183,21 +212,24 @@ class BackgroundPlaybackService : Service() {
         val config = configRepo?.getConfig(engineId)
 
         if (config == null) {
-            updateNotification("无法加载引擎配置")
+            updateNotification("无法加载引擎配置", false)
             PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.ERROR)
+            updateMediaSessionState(PlaybackStateCompat.STATE_ERROR)
             return
         }
 
         if (nextItem.isUrl) {
-            // URL 条目：先在 IO 线程抓取正文，再朗读
-            updateNotification("正在解析链接…")
+            updateNotification("正在解析链接…", true)
+            updateMediaSessionState(PlaybackStateCompat.STATE_BUFFERING)
             serviceScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 when (val result = UrlContentFetcher.fetch(nextItem.content)) {
                     is UrlContentFetcher.FetchResult.Success -> {
-                        // 同时把标题回写到 PlaylistItem（仅内存，方便 UI 显示）
                         PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.PLAYING)
                         withMain {
-                            updateNotification("正在播放: ${result.title.take(20)}")
+                            updateNotification("正在播放: ${result.title.take(20)}", true)
+                            val updatedItem = nextItem.copy(title = result.title)
+                            updateMediaMetadata(updatedItem)
+                            updateMediaSessionState(PlaybackStateCompat.STATE_PLAYING)
                             demoService?.speak(result.content, config, speed = currentSpeed)
                         }
                     }
@@ -205,49 +237,72 @@ class BackgroundPlaybackService : Service() {
                         TtsLogger.w(TAG) { "URL 抓取失败: ${result.message}" }
                         withMain {
                             PlaylistManager.updateItemStatus(nextItem.id, PlaylistItemStatus.ERROR)
-                            updateNotification("链接解析失败: ${result.message.take(30)}")
-                            // 自动跳下一条
+                            updateNotification("链接解析失败: ${result.message.take(30)}", false)
                             playNextItem()
                         }
                     }
                 }
             }
         } else {
-            // 普通文本条目：直接朗读
-            updateNotification("正在播放: ${nextItem.content.take(20)}")
+            updateNotification("正在播放: ${nextItem.content.take(20)}", true)
+            updateMediaSessionState(PlaybackStateCompat.STATE_PLAYING)
             demoService?.speak(nextItem.content, config, speed = currentSpeed)
         }
     }
 
-    /** 在主线程执行 lambda（辅助函数） */
     private suspend fun withMain(block: () -> Unit) {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) { block() }
     }
 
+    private fun skipToPrevious() {
+        val currentId = currentPlayingItem?.id ?: return
+        val prevItem = PlaylistManager.getPreviousItemBefore(currentId)
+        
+        demoService?.stop()
+        
+        if (prevItem != null) {
+            PlaylistManager.markAllAs(PlaylistItemStatus.IDLE)
+            currentPlayingItem = null
+            val list = PlaylistManager.playlist.value
+            val idx = list.indexOfFirst { it.id == prevItem.id }
+            list.take(idx).forEach { PlaylistManager.updateItemStatus(it.id, PlaylistItemStatus.COMPLETED) }
+            playNextItem()
+        } else {
+            PlaylistManager.updateItemStatus(currentId, PlaylistItemStatus.IDLE)
+            currentPlayingItem = null
+            playNextItem()
+        }
+    }
+
     private fun skipToNext() {
-        demoService?.stop() // This will trigger STATE_STOPPED -> playNextItem
+        demoService?.stop()
     }
 
-    /** 暂停播放（保留服务和资源，允许恢复） */
     private fun pausePlayback() {
-        demoService?.pause()
-        currentPlayingItem?.let { item ->
-            PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PAUSED)
+        if (demoService?.getState() == TalkifyTtsDemoService.STATE_PLAYING) {
+            demoService?.pause()
+            currentPlayingItem?.let { item ->
+                PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PAUSED)
+            }
+            updateNotification("已暂停", false)
+            updateMediaSessionState(PlaybackStateCompat.STATE_PAUSED)
         }
-        updateNotification("已暂停")
     }
 
-    /** 恢复播放 */
     private fun resumePlayback() {
-        demoService?.resume()
-        currentPlayingItem?.let { item ->
-            PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PLAYING)
+        if (demoService?.getState() == TalkifyTtsDemoService.STATE_PAUSED) {
+            demoService?.resume()
+            currentPlayingItem?.let { item ->
+                PlaylistManager.updateItemStatus(item.id, PlaylistItemStatus.PLAYING)
+            }
+            updateNotification("正在播放: ${currentPlayingItem?.content?.take(20) ?: ""}", true)
+            updateMediaSessionState(PlaybackStateCompat.STATE_PLAYING)
         }
-        updateNotification("正在播放: ${currentPlayingItem?.content?.take(20) ?: ""}")
     }
 
     private fun stopPlayback() {
         demoService?.stop()
+        updateMediaSessionState(PlaybackStateCompat.STATE_STOPPED)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -256,6 +311,8 @@ class BackgroundPlaybackService : Service() {
         TtsLogger.i(TAG) { "Service Destroyed" }
         demoService?.release()
         serviceScope.cancel()
+        mediaSession?.isActive = false
+        mediaSession?.release()
         super.onDestroy()
     }
 
@@ -273,34 +330,77 @@ class BackgroundPlaybackService : Service() {
         }
     }
 
-    private fun updateNotification(text: String) {
-        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(NOTIFICATION_ID, createNotification(text))
+    private fun getPendingIntent(actionStr: String, requestCode: Int): PendingIntent {
+        val intent = Intent(this, BackgroundPlaybackService::class.java).apply {
+            action = actionStr
+        }
+        return PendingIntent.getService(
+            this, requestCode, intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
     }
 
-    private fun createNotification(content: String): Notification {
+    private fun updateNotification(text: String, isPlaying: Boolean) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICATION_ID, createNotification(text, isPlaying))
+    }
+
+    private fun createNotification(content: String, isPlaying: Boolean): Notification {
         val intent = Intent(this, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             this, 0, intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         
-        // Add robust stop action intent
-        val stopIntent = Intent(this, BackgroundPlaybackService::class.java).apply {
-            action = ACTION_STOP
+        val prevPendingIntent = getPendingIntent(ACTION_PREV, 1)
+        val pausePlayIntent = if (isPlaying) getPendingIntent(ACTION_PAUSE, 2) else getPendingIntent(ACTION_RESUME, 3)
+        val nextPendingIntent = getPendingIntent(ACTION_NEXT, 4)
+        val stopPendingIntent = getPendingIntent(ACTION_STOP, 5)
+
+        val playPauseIcon = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+        val playPauseTitle = if (isPlaying) "暂停" else "播放"
+
+        val mediaStyle = androidx.media.app.NotificationCompat.MediaStyle()
+            .setShowActionsInCompactView(0, 1, 2)
+            
+        mediaSession?.let {
+            mediaStyle.setMediaSession(it.sessionToken)
         }
-        val stopPendingIntent = PendingIntent.getService(
-            this, 1, stopIntent,
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        )
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TTS 后台朗读")
             .setContentText(content)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentIntent(pendingIntent)
-            .addAction(android.R.drawable.ic_media_pause, "停止", stopPendingIntent)
-            .setOngoing(true)
+            .setDeleteIntent(stopPendingIntent)
+            .addAction(android.R.drawable.ic_media_previous, "上一首", prevPendingIntent)
+            .addAction(playPauseIcon, playPauseTitle, pausePlayIntent)
+            .addAction(android.R.drawable.ic_media_next, "下一首", nextPendingIntent)
+            .setStyle(mediaStyle)
+            .setOngoing(isPlaying)
             .build()
+    }
+    
+    private fun updateMediaSessionState(state: Int) {
+        val playbackStateBuilder = PlaybackStateCompat.Builder()
+            .setActions(
+                PlaybackStateCompat.ACTION_PLAY or
+                PlaybackStateCompat.ACTION_PAUSE or
+                PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                PlaybackStateCompat.ACTION_STOP
+            )
+            .setState(state, PlaybackStateCompat.PLAYBACK_POSITION_UNKNOWN, 1.0f)
+            
+        mediaSession?.setPlaybackState(playbackStateBuilder.build())
+    }
+    
+    private fun updateMediaMetadata(item: PlaylistItem) {
+        val title = if (!item.title.isNullOrBlank() && item.isUrl) item.title else item.content.take(40)
+        val metadataBuilder = MediaMetadataCompat.Builder()
+            .putString(MediaMetadataCompat.METADATA_KEY_TITLE, title)
+            .putString(MediaMetadataCompat.METADATA_KEY_ARTIST, "Talkify TTS")
+            
+        mediaSession?.setMetadata(metadataBuilder.build())
     }
 }

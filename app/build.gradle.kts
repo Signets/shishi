@@ -91,4 +91,7 @@ dependencies {
 
     // Jsoup 用于解析网页 HTML 正文（微信公众号文章等）
     implementation(libs.jsoup)
+
+    // AndroidX Media 用于 MediaSessionCompat 和 MediaStyle 通知
+    implementation(libs.androidx.media)
 }

@@ -39,6 +39,10 @@ class TalkifyTtsDemoService(
     @Volatile
     private var isStopped = AtomicBoolean(false)
 
+    /** 暂停标志：暂停期间合成完成不触发 stopPlayback() */
+    @Volatile
+    private var isPaused = AtomicBoolean(false)
+
     @Volatile
     private var currentState = STATE_IDLE
 
@@ -58,11 +62,12 @@ class TalkifyTtsDemoService(
         speed: Float = 1.0f
     ) {
         currentSpeed = speed
-        if (currentState == STATE_PLAYING) {
+        if (currentState == STATE_PLAYING || currentState == STATE_PAUSED) {
             stop()
         }
 
         isStopped.set(false)
+        isPaused.set(false)
         currentState = STATE_IDLE
         lastErrorMessage = null
         notifyStateChange()
@@ -137,6 +142,12 @@ class TalkifyTtsDemoService(
 
             override fun onSynthesisCompleted() {
                 TtsLogger.d("Synthesis completed")
+                if (isPaused.get()) {
+                    // 暂停期间合成完成：音频已写入缓冲区，等待音频播完后再结束
+                    // 不立即调用 stopPlayback()，避免覆盖 PAUSED 状态
+                    TtsLogger.d("Synthesis completed while paused, waiting for audio drain")
+                    return
+                }
                 stopPlayback()
             }
 
@@ -153,9 +164,10 @@ class TalkifyTtsDemoService(
     fun pause() {
         if (currentState == STATE_PLAYING) {
             TtsLogger.d("Pausing playback")
+            isPaused.set(true)
             audioPlayer?.pause()
             currentState = STATE_PAUSED
-            // 不通知 stateListener，暂停状态由 BackgroundPlaybackService 管理
+            notifyStateChange()
         }
     }
 
@@ -163,8 +175,10 @@ class TalkifyTtsDemoService(
     fun resume() {
         if (currentState == STATE_PAUSED) {
             TtsLogger.d("Resuming playback")
+            isPaused.set(false)
             audioPlayer?.resume()
             currentState = STATE_PLAYING
+            notifyStateChange()
             if (currentSpeed != 1.0f) {
                 audioPlayer?.setPlaybackSpeed(currentSpeed)
             }
@@ -174,6 +188,7 @@ class TalkifyTtsDemoService(
     fun stop() {
         TtsLogger.d("Stopping playback")
         isStopped.set(true)
+        isPaused.set(false)
         audioPlayer?.stop()
         stopPlayback()
     }
@@ -198,7 +213,8 @@ class TalkifyTtsDemoService(
                 currentState = if (lastErrorMessage != null) {
                     STATE_ERROR
                 } else {
-                    STATE_IDLE
+                    // 正常完成上报 STATE_STOPPED，触发 BackgroundPlaybackService.playNextItem()
+                    STATE_STOPPED
                 }
                 notifyStateChange()
             }
@@ -217,8 +233,17 @@ class TalkifyTtsDemoService(
 
     fun release() {
         TtsLogger.d("Releasing service")
-        stop()
+        isStopped.set(true)
+        isPaused.set(false)
         try {
+            audioPlayer?.stop()
+            audioPlayer?.release()
+            audioPlayer = null
+        } catch (e: Exception) {
+            TtsLogger.e("Error releasing audio player on release: ${e.message}", e)
+        }
+        try {
+            currentEngine?.stop()
             currentEngine?.release()
         } catch (e: Exception) {
             TtsLogger.e("Error releasing engine: ${e.message}", e)
